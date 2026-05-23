@@ -30,7 +30,7 @@ export default function EngagementPage() {
     ]).then(([{ data: emps }, { data: cons }]) => {
       const empList = emps ?? [];
       setEmployees(empList);
-      setConnects((cons ?? []).map(c => ({ ...c, employee: empList.find(e => e.id === c.employee_id) })));
+      setConnects((cons ?? []).map(c => Object.assign({}, c, { employee: empList.find(e => e.id === c.employee_id) })));
       setLoading(false);
     });
   }, []);
