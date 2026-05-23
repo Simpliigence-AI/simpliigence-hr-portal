@@ -1,5 +1,4 @@
 import { getAvatarColor } from '@/lib/utils';
-import Image from 'next/image';
 
 interface AvatarProps {
   name: string;
@@ -16,8 +15,9 @@ export default function Avatar({ name, photoUrl, size = 'md' }: AvatarProps) {
 
   if (photoUrl) {
     return (
-      <div className={`${cls} rounded-full overflow-hidden relative shrink-0`}>
-        <Image src={photoUrl} alt={name} fill className="object-cover" />
+      <div className={`${cls} rounded-full overflow-hidden shrink-0`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={photoUrl} alt={name} className="w-full h-full object-cover" />
       </div>
     );
   }
