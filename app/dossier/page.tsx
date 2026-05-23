@@ -58,6 +58,7 @@ export default function DossierPage() {
   const [editing,    setEditing]    = useState(false);
   const [editForm,   setEditForm]   = useState<Partial<Employee & { termination_date: string; status: string; sharepoint_url: string }>>({});
   const [saving,     setSaving]     = useState(false);
+  const [editError,  setEditError]  = useState('');
   const [revealed,   setRevealed]   = useState<Record<string, boolean>>({});
   const [view,       setView]       = useState<'grid' | 'list'>('grid');
   const [docs,       setDocs]       = useState<EmployeeDoc[]>([]);
@@ -152,10 +153,21 @@ export default function DossierPage() {
   // ── Edit helpers ──────────────────────────────────────────────
   function openProfile(emp: Employee) { setSelected(emp); setEditing(false); setModalTab('Profile'); }
   function startEdit()  { setEditForm({ ...selected } as never); setEditing(true); }
-  function cancelEdit() { setEditing(false); setEditForm({}); }
+  function cancelEdit() { setEditing(false); setEditForm({}); setEditError(''); }
 
   async function saveEdit() {
     if (!selected) return;
+    setEditError('');
+    // Required field validation
+    const missing: string[] = [];
+    if (!editForm.role?.toString().trim())     missing.push('Role / Title');
+    if (!(editForm as never as {dept:string}).dept?.toString().trim()) missing.push('Department');
+    if (!editForm.location?.toString().trim()) missing.push('Location');
+    if (!editForm.manager?.toString().trim())  missing.push('Manager');
+    if (missing.length > 0) {
+      setEditError(`Required fields missing: ${missing.join(', ')}`);
+      return;
+    }
     setSaving(true);
     const { data } = await supabase.from('employees').update(editForm).eq('id', selected.id).select().single();
     if (data) { setEmployees(es => es.map(e => e.id === data.id ? data : e)); setSelected(data); setEditing(false); }
@@ -396,13 +408,16 @@ export default function DossierPage() {
               {editing && (
                 <div className="p-6 space-y-4">
                   <p className="text-xs bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-gray-600">
-                    ✏️ Editing <strong>{selected.name}</strong> — saves directly to database.
+                    ✏️ Editing <strong>{selected.name}</strong> — saves directly to database. Fields marked <span className="text-red-500 font-bold">*</span> are required.
                   </p>
+                  {editError && (
+                    <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">⚠️ {editError}</div>
+                  )}
                   <div className="grid sm:grid-cols-2 gap-3">
                     <EField label="Full Name"      k="name"             editForm={editForm} F={F} />
-                    <EField label="Role / Title"   k="role"             editForm={editForm} F={F} />
-                    <EField label="Location"       k="location"         editForm={editForm} F={F} />
-                    <EField label="Manager"        k="manager"          editForm={editForm} F={F} />
+                    <EField label="Role / Title"   k="role"             editForm={editForm} F={F} required />
+                    <EField label="Location"       k="location"         editForm={editForm} F={F} required />
+                    <EField label="Manager"        k="manager"          editForm={editForm} F={F} required />
                     <EField label="Join Date"      k="joined"           editForm={editForm} F={F} type="date" />
                     <EField label="Last Working Day (termination)" k="termination_date" editForm={editForm} F={F} type="date" />
                     <EField label="Phone"          k="phone"            editForm={editForm} F={F} />
@@ -417,7 +432,7 @@ export default function DossierPage() {
                     <EField label="SharePoint Folder URL" k="sharepoint_url" editForm={editForm} F={F} />
 
                     <div>
-                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Department</label>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Department <span className="text-red-500">*</span></label>
                       <select value={(editForm as never as {dept:string}).dept ?? ''} onChange={F('dept')}
                         className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400">
                         {DEPTS.map(d => <option key={d}>{d}</option>)}
@@ -577,13 +592,16 @@ function SensRow({ label, value, k, revealed, toggle }: { label:string; value?:s
   );
 }
 
-function EField({ label, k, editForm, F, type='text' }: { label:string; k:string; editForm:Record<string,unknown>; F:(k:string)=>React.ChangeEventHandler<HTMLInputElement>; type?:string }) {
+function EField({ label, k, editForm, F, type='text', required=false }: { label:string; k:string; editForm:Record<string,unknown>; F:(k:string)=>React.ChangeEventHandler<HTMLInputElement>; type?:string; required?:boolean }) {
+  const isEmpty = required && !(editForm[k] as string)?.toString().trim();
   return (
     <div>
-      <label className="text-xs font-semibold text-gray-500 mb-1 block">{label}</label>
+      <label className="text-xs font-semibold text-gray-500 mb-1 block">
+        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
       <input type={type} value={(editForm[k] as string) ?? ''}
         onChange={F(k)}
-        className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+        className={cn('w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400', isEmpty ? 'border-red-300 bg-red-50' : '')} />
     </div>
   );
 }
