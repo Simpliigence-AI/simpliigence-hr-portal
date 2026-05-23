@@ -133,11 +133,15 @@ export default function MapPage() {
       mapInstance.current = map;
 
       // Dark CartoDB tiles — no API key required
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter_no_labels/{z}/{x}/{y}{r}.png', {
-        attribution: '© OpenStreetMap contributors © CARTO',
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/">CARTO</a>',
         subdomains:  'abcd',
         maxZoom: 19,
+        crossOrigin: true,
       }).addTo(map);
+
+      // Force a re-render after DOM settles — prevents blank tile issue in React
+      setTimeout(() => map.invalidateSize(), 100);
 
       // Group by resolved coordinates
       const groupMap = new Map<string, PinGroup>();
@@ -272,15 +276,15 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* Map container */}
-      <div className="flex-1 px-6 pb-5 min-h-0">
+      {/* Map container — explicit height so Leaflet never gets 0px */}
+      <div className="px-6 pb-5 shrink-0" style={{ height: 'calc(100vh - 210px)' }}>
         <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-xl border border-gray-200">
           {loading && (
             <div className="absolute inset-0 bg-gray-900 flex items-center justify-center z-10">
               <div className="text-white/70 text-sm animate-pulse">Loading employee data…</div>
             </div>
           )}
-          <div ref={mapDiv} className="w-full h-full" />
+          <div ref={mapDiv} style={{ width: '100%', height: '100%' }} />
         </div>
       </div>
 
