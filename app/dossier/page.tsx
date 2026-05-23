@@ -108,7 +108,8 @@ export default function DossierPage() {
     const { error } = await supabase.storage.from('employee-photos').upload(path, file, { upsert: true });
     if (!error) {
       const { data: { publicUrl } } = supabase.storage.from('employee-photos').getPublicUrl(path);
-      const { data } = await supabase.from('employees').update({ photo_url: publicUrl }).eq('id', selected.id).select().single();
+      const urlWithCacheBust = `${publicUrl}?t=${Date.now()}`;
+      const { data } = await supabase.from('employees').update({ photo_url: urlWithCacheBust }).eq('id', selected.id).select().single();
       if (data) {
         setEmployees(es => es.map(e => e.id === data.id ? data : e));
         setSelected(data);
