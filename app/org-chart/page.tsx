@@ -101,7 +101,7 @@ function OrgBox({ node, isRoot = false }: { node: OrgNode; isRoot?: boolean }) {
         <div className="flex flex-col items-center">
           <div className="w-px h-6 bg-gray-200" />
           <div className="flex gap-4 items-start">
-            {node.reports.map((child, i) => (
+            {node.reports.map((child) => (
               <div key={child.id} className="flex flex-col items-center">
                 {node.reports.length > 1 && <div className="w-px h-6 bg-gray-200" />}
                 <OrgBox node={child} />
