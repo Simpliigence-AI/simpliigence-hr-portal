@@ -112,15 +112,6 @@ export default function MapPage() {
   useEffect(() => {
     if (loading || !mapDiv.current) return;
 
-    // Load Leaflet CSS once
-    if (!document.getElementById('leaflet-css')) {
-      const link    = document.createElement('link');
-      link.id       = 'leaflet-css';
-      link.rel      = 'stylesheet';
-      link.href     = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-    }
-
     function buildMap() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const L = (window as any).L;
@@ -132,16 +123,15 @@ export default function MapPage() {
       const map = L.map(mapDiv.current, { center: [20, 10], zoom: 2, minZoom: 2, maxZoom: 12 });
       mapInstance.current = map;
 
-      // Dark CartoDB tiles — no API key required
+      // CartoDB dark tiles — no API key required
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/">CARTO</a>',
         subdomains:  'abcd',
         maxZoom: 19,
-        crossOrigin: true,
       }).addTo(map);
 
-      // Force a re-render after DOM settles — prevents blank tile issue in React
-      setTimeout(() => map.invalidateSize(), 100);
+      // Force Leaflet to recalculate tile grid after React finishes rendering
+      setTimeout(() => map.invalidateSize(), 250);
 
       // Group by resolved coordinates
       const groupMap = new Map<string, PinGroup>();
