@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import { formatDate, getDeptColor, isVisaExpiringSoon, tenureYears } from '@/lib/utils';
 import Link from 'next/link';
 import Avatar from '@/components/Avatar';
+import HrChat from '@/components/HrChat';
 
 export const revalidate = 60;
 
@@ -36,20 +37,20 @@ export default async function DashboardPage() {
     { label: 'Total Headcount',  value: all.length,         color: '#1e88e5', href: '/dossier'    },
     { label: 'India FTEs',       value: india.length,       color: '#43a047', href: '/dossier?region=India' },
     { label: 'US / Canada Team', value: uscan.length,       color: '#9c27b0', href: '/dossier?region=USA'   },
-    { label: 'New Joiners (90d)',  value: newJoin.length,   color: '#fb8c00', href: '/onboarding' },
+    { label: 'New Joiners (90d)', value: newJoin.length,    color: '#fb8c00', href: '/onboarding' },
     { label: 'Visa Alerts (90d)', value: visaAlerts.length, color: '#e53935', href: '/dossier'    },
   ];
 
   const deptEntries = Object.entries(deptCounts).sort((a, b) => b[1] - a[1]);
-  const maxDept = Math.max(...deptEntries.map(d => d[1]));
+  const maxDept = Math.max(...deptEntries.map(d => d[1]), 1);
 
   return (
     <div className="p-8">
       {/* Welcome */}
       <div className="mb-8 bg-gradient-to-r from-[#0f1e3d] to-[#1a3a6b] rounded-2xl p-6 text-white">
-        <h1 className="text-2xl font-bold mb-1">👋 Welcome back, Raghu</h1>
+        <h1 className="text-2xl font-bold mb-1">👋 Welcome back</h1>
         <p className="text-white/70 text-sm">
-          Simpliigence HR Portal · {new Date().toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}
+          Simpliigence HR Portal · {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
       </div>
 
@@ -66,7 +67,7 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-2 gap-6 mb-6">
         {/* Department breakdown */}
         <div className="bg-white rounded-xl shadow-sm p-5">
           <h2 className="font-semibold text-gray-800 mb-4">Department Breakdown</h2>
@@ -131,10 +132,10 @@ export default async function DashboardPage() {
           <h2 className="font-semibold text-gray-800 mb-4">Region / Work Mode</h2>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: 'India', value: india.length, color: '#43a047' },
-              { label: 'US / Canada', value: uscan.length, color: '#9c27b0' },
-              { label: 'WFH', value: all.filter(e => e.wfo === 'WFH').length, color: '#1e88e5' },
-              { label: 'WFO', value: all.filter(e => e.wfo === 'WFO').length, color: '#fb8c00' },
+              { label: 'India',      value: india.length,                              color: '#43a047' },
+              { label: 'US / Canada', value: uscan.length,                             color: '#9c27b0' },
+              { label: 'WFH',        value: all.filter(e => e.wfo === 'WFH').length,   color: '#1e88e5' },
+              { label: 'WFO',        value: all.filter(e => e.wfo === 'WFO').length,   color: '#fb8c00' },
             ].map(s => (
               <div key={s.label} className="rounded-lg p-3 text-center" style={{ background: s.color + '15' }}>
                 <div className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</div>
@@ -144,6 +145,9 @@ export default async function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* AI Chat */}
+      <HrChat />
     </div>
   );
 }

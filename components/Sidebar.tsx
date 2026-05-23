@@ -1,23 +1,48 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { createBrowserClient } from '@supabase/ssr';
 import { cn } from '@/lib/utils';
 
 const NAV = [
-  { href: '/',             label: 'Dashboard',    icon: '⊞' },
-  { href: '/dossier',      label: 'HR Dossier',   icon: '👥' },
-  { href: '/performance',  label: 'Performance',  icon: '📊' },
-  { href: '/org-chart',    label: 'Org Chart',    icon: '🏢' },
-  { href: '/onboarding',   label: 'Onboarding',   icon: '🚀' },
-  { href: '/engagement',   label: 'Engagement',   icon: '💬' },
-  { href: '/policy',       label: 'Policies',     icon: '📋' },
-  { href: '/actions',      label: 'Action Tracker', icon: '✅' },
+  { href: '/',             label: 'Dashboard',        icon: '⊞' },
+  { href: '/dossier',      label: 'HR Dossier',       icon: '👥' },
+  { href: '/performance',  label: 'Performance',      icon: '📊' },
+  { href: '/org-chart',    label: 'Org Chart',        icon: '🏢' },
+  { href: '/onboarding',   label: 'Onboarding',       icon: '🚀' },
+  { href: '/engagement',   label: 'Engagement',       icon: '💬' },
+  { href: '/policy',       label: 'Policies',         icon: '📋' },
+  { href: '/actions',      label: 'Action Tracker',   icon: '✅' },
   { href: '/admin',        label: 'Backup & Restore', icon: '🗄️' },
 ];
 
 export default function Sidebar() {
-  const path = usePathname();
+  const path   = usePathname();
+  const router = useRouter();
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUserEmail(session?.user?.email ?? null);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
+
+  const initials = userEmail
+    ? userEmail.split('@')[0].split('.').map((p: string) => p[0]?.toUpperCase() ?? '').join('').slice(0, 2)
+    : '?';
 
   return (
     <aside className="w-60 min-h-screen bg-[#0f1e3d] text-white flex flex-col shrink-0">
@@ -54,9 +79,26 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-white/10 text-xs text-white/40 text-center">
-        HR Portal v1.0 · May 2026
+      {/* User + Sign out */}
+      <div className="p-3 border-t border-white/10">
+        {userEmail && (
+          <div className="flex items-center gap-3 px-3 py-2 mb-1">
+            <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center text-xs font-bold shrink-0">
+              {initials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-white/80 truncate">{userEmail}</div>
+            </div>
+          </div>
+        )}
+        <button
+          onClick={signOut}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+        >
+          <span className="w-5 text-center">↩</span>
+          Sign out
+        </button>
+        <div className="text-xs text-white/30 text-center mt-2">HR Portal v1.0 · May 2026</div>
       </div>
     </aside>
   );
