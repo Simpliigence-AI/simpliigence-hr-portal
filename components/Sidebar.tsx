@@ -12,6 +12,8 @@ const NAV = [
   { href: '/onboarding',   label: 'Onboarding',   icon: '🚀' },
   { href: '/engagement',   label: 'Engagement',   icon: '💬' },
   { href: '/policy',       label: 'Policies',     icon: '📋' },
+  { href: '/actions',      label: 'Action Tracker', icon: '✅' },
+  { href: '/admin',        label: 'Backup & Restore', icon: '🗄️' },
 ];
 
 export default function Sidebar() {
