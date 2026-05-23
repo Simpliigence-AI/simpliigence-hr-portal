@@ -1,112 +1,119 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { getDeptColor } from '@/lib/utils';
 
-export const revalidate = 300;
+interface Employee {
+  id: string; name: string; role?: string|null; dept?: string|null;
+  manager?: string|null; region?: string|null; active?: boolean|null;
+  location?: string|null; type?: string|null;
+}
 
-interface OrgNode { id: string; name: string; role: string; dept: string; reports: OrgNode[]; }
+interface TreeNode {
+  emp: Employee;
+  children: TreeNode[];
+  contractorGroup?: { count: number; names: string[] }; // collapsed contractor block
+}
 
-const ORG: OrgNode = {
-  id:'SPL-0001', name:'Raghu Seetharam', role:'CEO / Founder', dept:'Leadership',
-  reports:[
-    { id:'SPL-073',  name:'Manjunath Tadahal',   role:'Site Head',              dept:'Operations',
-      reports:[
-        { id:'SPL-NEW6', name:'Harish Kumar Reddy', role:'Delivery Manager', dept:'Operations', reports:[] },
-        { id:'SPL-010',  name:'Vinod Royan',         role:'SMB Projects',    dept:'Operations', reports:[] },
-        { id:'SPL-039',  name:'Akanksha Srivastava', role:'India HR',        dept:'HR',         reports:[] },
-        { id:'SPL-NEW9', name:'Lokanath G R',         role:'Operations',     dept:'Operations', reports:[] },
-      ],
-    },
-    { id:'SPL-NEW2', name:'Anupama B', role:'Director - Architecture', dept:'Delivery',
-      reports:[
-        { id:'SPL-NEW22', name:'Vasanth P', role:'Program Manager', dept:'Delivery',
-          reports:[
-            { id:'SPL-065A',  name:'Allan Samuel',    role:'Business Analyst', dept:'Delivery', reports:[] },
-            { id:'SPL-019',   name:'Bhanu Prakash C', role:'Business Analyst', dept:'Delivery', reports:[] },
-            { id:'SPL-NEW7',  name:'Joseph Sunil',    role:'Business Analyst', dept:'Delivery', reports:[] },
-            { id:'SPL-NEW12', name:'Pooja Sharma',    role:'Business Analyst', dept:'Delivery', reports:[] },
-            { id:'SPL-NEW17', name:'Shivam Varma',    role:'Business Analyst', dept:'Delivery', reports:[] },
-          ],
-        },
-        { id:'SPL-012', name:'Kokila Sampath', role:'Sr Developer', dept:'Delivery',
-          reports:[
-            { id:'SPL-030', name:'Arpit Soni',      role:'Sr Developer', dept:'Delivery', reports:[] },
-            { id:'SPL-076', name:'Sourabh Pradhan',  role:'Developer',   dept:'Delivery', reports:[] },
-          ],
-        },
-        { id:'SPL-065B', name:'Sailendra Raj Singh', role:'Sr Developer', dept:'Delivery',
-          reports:[
-            { id:'SPL-008',  name:'Anukanth S',        role:'Sr Developer', dept:'Delivery', reports:[] },
-            { id:'SPL-NEW8', name:'Kamalapuram Balaji', role:'Developer',   dept:'Delivery', reports:[] },
-          ],
-        },
-        { id:'SPL-026', name:'Shikhar Sharma', role:'Sr Developer', dept:'Delivery',
-          reports:[
-            { id:'SPL-003',   name:'Sai Aditya C',  role:'Sr Developer', dept:'Delivery', reports:[] },
-            { id:'SPL-NEW13', name:'Sandeep Reddy',  role:'Sr Developer', dept:'Delivery', reports:[] },
-            { id:'SPL-NEW11', name:'Pawan Thote',    role:'Developer',    dept:'Delivery', reports:[] },
-          ],
-        },
-      ],
-    },
-    { id:'SPL-067', name:'Rupesh M', role:'Finance Lead', dept:'Finance',
-      reports:[
-        { id:'SPL-070', name:'Prajwal G',  role:'Finance',       dept:'Finance', reports:[] },
-        { id:'SPL-075', name:'Somya Goel', role:'HR Operations', dept:'HR',      reports:[] },
-      ],
-    },
-    { id:'SPL-062',  name:'Santhosh Pande', role:'GCC Sales',   dept:'Sales', reports:[] },
-    { id:'US-001',   name:'Sudha Raghu',    role:'USCAN HR',    dept:'HR',
-      reports:[
-        { id:'US-002', name:'Vivin Deshpande',       role:'Architect',      dept:'Delivery', reports:[] },
-        { id:'US-003', name:'Srikiran Betha',         role:'Consultant',     dept:'Delivery', reports:[] },
-        { id:'US-004', name:'Samarendranath B',       role:'Consultant',     dept:'Delivery', reports:[] },
-        { id:'US-005', name:'Srilekha K',             role:'Data Architect', dept:'Delivery', reports:[] },
-        { id:'US-007', name:'Chaitanya Kulkarni',     role:'Architect',      dept:'Delivery', reports:[] },
-        { id:'US-008', name:'Nichole Kruse',          role:'Consultant',     dept:'Delivery', reports:[] },
-        { id:'US-009', name:'Sambram Rao',            role:'Consultant',     dept:'Delivery', reports:[] },
-        { id:'US-011', name:'Vamsee Kurra',           role:'Consultant',     dept:'Delivery', reports:[] },
-      ],
-    },
-    { id:'US-012', name:'Scott Murray', role:'USCAN Sales', dept:'Sales',
-      reports:[
-        { id:'SPL-NEW20', name:'Stuti Dwivedi', role:'Marketing Lead', dept:'Marketing',
-          reports:[
-            { id:'SPL-NEW10', name:'Nagajothika K', role:'Marketing', dept:'Marketing', reports:[] },
-            { id:'SPL-052',   name:'Subhasmita D',  role:'Marketing', dept:'Marketing', reports:[] },
-          ],
-        },
-      ],
-    },
-  ],
-};
+function isContractor(emp: Employee) {
+  return emp.id.startsWith('C-') || emp.id.startsWith('CSPL-');
+}
 
-function OrgBox({ node, isRoot = false }: { node: OrgNode; isRoot?: boolean }) {
-  const color = getDeptColor(node.dept);
+function buildTree(employees: Employee[]): TreeNode | null {
+  const byName = new Map<string, Employee>();
+  for (const e of employees) byName.set(e.name.toLowerCase().trim(), e);
+
+  // children map: manager name -> children
+  const childrenOf = new Map<string, Employee[]>();
+  for (const e of employees) {
+    const mgr = (e.manager ?? '').trim();
+    if (!mgr) continue;
+    const list = childrenOf.get(mgr.toLowerCase()) ?? [];
+    list.push(e);
+    childrenOf.set(mgr.toLowerCase(), list);
+  }
+
+  // Root: Raghu Seetharam (no manager or manager not found)
+  const root = employees.find(e => e.name.toLowerCase().includes('raghu seetharam'))
+    ?? employees.find(e => !e.manager || !byName.has((e.manager ?? '').toLowerCase().trim()));
+  if (!root) return null;
+
+  const visited = new Set<string>();
+
+  function build(emp: Employee): TreeNode {
+    visited.add(emp.id);
+    const directChildren = childrenOf.get(emp.name.toLowerCase().trim()) ?? [];
+    const ftChildren = directChildren.filter(c => !isContractor(c) && !visited.has(c.id));
+    const contractors = directChildren.filter(c => isContractor(c) && !visited.has(c.id));
+
+    const node: TreeNode = {
+      emp,
+      children: ftChildren.map(build),
+    };
+
+    if (contractors.length > 0) {
+      node.contractorGroup = {
+        count: contractors.length,
+        names: contractors.slice(0, 12).map(c => c.name),
+      };
+    }
+    return node;
+  }
+
+  return build(root);
+}
+
+/* ── OrgBox component ─────────────────────────────────────────────── */
+function OrgBox({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
+  const [open, setOpen] = useState(false);
+  const color = getDeptColor(node.emp.dept ?? 'Other');
+  const initials = node.emp.name.split(' ').slice(0, 2).map((w: string) => w[0]).join('');
+  const hasChildren = node.children.length > 0 || !!node.contractorGroup;
+
   return (
     <div className="flex flex-col items-center">
       <div
-        className="bg-white border rounded-xl p-3 shadow-sm text-center min-w-36 max-w-44"
+        className={`bg-white border rounded-xl p-3 shadow-sm text-center min-w-36 max-w-44 ${hasChildren ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
         style={{ borderTopWidth: 4, borderTopColor: color }}
+        onClick={() => hasChildren && setOpen(o => !o)}
+        title={hasChildren ? (open ? 'Collapse' : 'Expand') : undefined}
       >
-        <div className="w-10 h-10 rounded-full mx-auto mb-2 flex items-center justify-center text-white text-sm font-bold"
-          style={{ backgroundColor: color }}>
-          {node.name.split(' ').slice(0, 2).map(w => w[0]).join('')}
+        <div
+          className="w-10 h-10 rounded-full mx-auto mb-2 flex items-center justify-center text-white text-sm font-bold"
+          style={{ backgroundColor: color }}
+        >
+          {initials}
         </div>
-        <div className="font-semibold text-xs text-gray-900 leading-tight">{node.name}</div>
-        <div className="text-xs text-gray-400 mt-0.5 leading-tight">{node.role}</div>
-        <span className="inline-block text-xs px-1.5 py-0.5 rounded-full text-white mt-1.5 font-medium" style={{ backgroundColor: color, fontSize: 10 }}>{node.dept}</span>
+        <div className="font-semibold text-xs text-gray-900 leading-tight">{node.emp.name}</div>
+        <div className="text-xs text-gray-400 mt-0.5 leading-tight">{node.emp.role}</div>
+        <span
+          className="inline-block text-xs px-1.5 py-0.5 rounded-full text-white mt-1.5 font-medium"
+          style={{ backgroundColor: color, fontSize: 10 }}
+        >
+          {node.emp.dept ?? 'Other'}
+        </span>
+        {hasChildren && (
+          <div className="text-xs text-gray-400 mt-1">{open ? '▲' : '▼'} {node.children.length + (node.contractorGroup ? 1 : 0)} direct</div>
+        )}
       </div>
 
-      {node.reports.length > 0 && (
+      {open && hasChildren && (
         <div className="flex flex-col items-center">
           <div className="w-px h-6 bg-gray-200" />
-          <div className="flex gap-4 items-start">
-            {node.reports.map((child) => (
-              <div key={child.id} className="flex flex-col items-center">
-                {node.reports.length > 1 && <div className="w-px h-6 bg-gray-200" />}
-                <OrgBox node={child} />
+          <div className="flex gap-4 items-start flex-wrap justify-center">
+            {node.children.map(child => (
+              <div key={child.emp.id} className="flex flex-col items-center">
+                <div className="w-px h-6 bg-gray-200" />
+                <OrgBox node={child} depth={depth + 1} />
               </div>
             ))}
+            {node.contractorGroup && (
+              <ContractorGroupBox
+                count={node.contractorGroup.count}
+                names={node.contractorGroup.names}
+              />
+            )}
           </div>
         </div>
       )}
@@ -114,31 +121,90 @@ function OrgBox({ node, isRoot = false }: { node: OrgNode; isRoot?: boolean }) {
   );
 }
 
-export default async function OrgChartPage() {
-  const { data: employees } = await supabase.from('employees').select('id, name, role, dept, location, region').eq('active', true);
-  const all = employees ?? [];
+function ContractorGroupBox({ count, names }: { count: number; names: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="flex flex-col items-center">
+      <div className="w-px h-6 bg-gray-200" />
+      <div
+        className="bg-orange-50 border-2 border-orange-200 rounded-xl p-3 shadow-sm text-center min-w-36 max-w-52 cursor-pointer hover:shadow-md transition-shadow"
+        onClick={() => setExpanded(o => !o)}
+      >
+        <div className="w-10 h-10 rounded-full mx-auto mb-2 flex items-center justify-center bg-orange-400 text-white text-sm font-bold">
+          {count}
+        </div>
+        <div className="font-semibold text-xs text-gray-900 leading-tight">India Contractors</div>
+        <div className="text-xs text-gray-400 mt-0.5">{count} active billable</div>
+        <span className="inline-block text-xs px-1.5 py-0.5 rounded-full text-white mt-1.5 font-medium bg-orange-400" style={{ fontSize: 10 }}>
+          Contractors
+        </span>
+        <div className="text-xs text-gray-400 mt-1">{expanded ? '▲ hide' : '▼ show names'}</div>
+      </div>
+      {expanded && (
+        <div className="mt-2 bg-white rounded-xl border border-orange-200 shadow p-3 max-w-64 text-xs text-gray-600 leading-relaxed">
+          {names.join(', ')}{count > names.length ? ` + ${count - names.length} more…` : ''}
+        </div>
+      )}
+    </div>
+  );
+}
 
-  const deptGroups: Record<string, typeof all> = {};
-  for (const e of all) { deptGroups[e.dept ?? 'Other'] ??= []; deptGroups[e.dept ?? 'Other'].push(e); }
+/* ── Page ─────────────────────────────────────────────────────────── */
+export default function OrgChartPage() {
+  const [tree, setTree]       = useState<TreeNode | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [deptGroups, setDeptGroups] = useState<Record<string, Employee[]>>({});
+
+  useEffect(() => {
+    supabase
+      .from('employees')
+      .select('id,name,role,dept,manager,region,active,location,type')
+      .eq('active', true)
+      .then(({ data }) => {
+        const employees = (data ?? []) as Employee[];
+        setTree(buildTree(employees));
+
+        const groups: Record<string, Employee[]> = {};
+        for (const e of employees) {
+          const d = e.dept ?? 'Other';
+          groups[d] = groups[d] ?? [];
+          groups[d].push(e);
+        }
+        setDeptGroups(groups);
+        setLoading(false);
+      });
+  }, []);
+
+  const deptEntries = Object.entries(deptGroups).sort((a, b) => b[1].length - a[1].length);
 
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Org Chart</h1>
-      <p className="text-sm text-gray-500 mb-8">Simpliigence reporting structure</p>
+      <p className="text-sm text-gray-500 mb-2">
+        Simpliigence reporting structure · Click any node to expand / collapse
+      </p>
+      <p className="text-xs text-gray-400 mb-8 bg-blue-50 rounded-lg px-3 py-2 inline-block">
+        💡 Tree is built live from the manager field in the HR dossier. Contractors are collapsed under Manjunath.
+      </p>
 
-      {/* Tree */}
-      <div className="overflow-auto pb-8">
-        <div className="inline-flex min-w-full justify-center">
-          <OrgBox node={ORG} isRoot />
+      {loading ? (
+        <div className="flex items-center justify-center h-48 text-gray-400 text-sm animate-pulse">Loading org chart…</div>
+      ) : tree ? (
+        <div className="overflow-auto pb-8">
+          <div className="inline-flex min-w-full justify-center">
+            <OrgBox node={tree} />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="text-gray-400 text-sm">No data found.</div>
+      )}
 
       <hr className="my-8" />
 
       {/* Business units grid */}
       <h2 className="text-lg font-semibold text-gray-800 mb-4">Business Units</h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {Object.entries(deptGroups).sort((a, b) => b[1].length - a[1].length).map(([dept, emps]) => (
+        {deptEntries.map(([dept, emps]) => (
           <div key={dept} className="bg-white rounded-xl shadow-sm p-4 border-t-4" style={{ borderTopColor: getDeptColor(dept) }}>
             <div className="font-semibold text-sm text-gray-800 mb-1">{dept}</div>
             <div className="text-2xl font-bold" style={{ color: getDeptColor(dept) }}>{emps.length}</div>

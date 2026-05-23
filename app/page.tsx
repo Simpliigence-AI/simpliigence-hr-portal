@@ -7,8 +7,18 @@ import HrChat from '@/components/HrChat';
 export const revalidate = 60;
 
 async function getStats() {
-  const { data: employees } = await supabase.from('employees').select('*').eq('active', true);
-  const all = employees ?? [];
+  const [{ data: activeData }, { data: allData }] = await Promise.all([
+    supabase.from('employees').select('*').eq('active', true),
+    supabase.from('employees').select('id,active,status,region,joined,visa_expiry,visa,location,wfo,name,role,photo_url,dept'),
+  ]);
+  const all      = activeData ?? [];
+  const everyone = allData ?? [];
+
+  const inactive = everyone.filter(e =>
+    e.active === false ||
+    e.status === 'Ex-Employee' ||
+    e.status === 'Ex-Contractor'
+  );
 
   const now     = new Date();
   const ago90   = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
@@ -27,18 +37,19 @@ async function getStats() {
     .sort((a, b) => new Date(b.joined!).getTime() - new Date(a.joined!).getTime())
     .slice(0, 8);
 
-  return { all, india, uscan, newJoin, visaAlerts, deptCounts, recentJoiners };
+  return { all, inactive, india, uscan, newJoin, visaAlerts, deptCounts, recentJoiners };
 }
 
 export default async function DashboardPage() {
-  const { all, india, uscan, newJoin, visaAlerts, deptCounts, recentJoiners } = await getStats();
+  const { all, inactive, india, uscan, newJoin, visaAlerts, deptCounts, recentJoiners } = await getStats();
 
   const stats = [
-    { label: 'Total Headcount',  value: all.length,         color: '#1e88e5', href: '/dossier'    },
-    { label: 'India FTEs',       value: india.length,       color: '#43a047', href: '/dossier?region=India' },
-    { label: 'US / Canada Team', value: uscan.length,       color: '#9c27b0', href: '/dossier?region=USA'   },
-    { label: 'New Joiners (90d)', value: newJoin.length,    color: '#fb8c00', href: '/onboarding' },
-    { label: 'Visa Alerts (90d)', value: visaAlerts.length, color: '#e53935', href: '/dossier'    },
+    { label: 'Active Headcount',  value: all.length,         color: '#1e88e5', href: '/dossier'    },
+    { label: 'Inactive / Alumni', value: inactive.length,    color: '#78909c', href: '/dossier'    },
+    { label: 'India Team',        value: india.length,       color: '#43a047', href: '/dossier?region=India' },
+    { label: 'US / Canada Team',  value: uscan.length,       color: '#9c27b0', href: '/dossier?region=USA'   },
+    { label: 'New Joiners (90d)', value: newJoin.length,     color: '#fb8c00', href: '/onboarding' },
+    { label: 'Visa Alerts',       value: visaAlerts.length,  color: '#e53935', href: '/dossier'    },
   ];
 
   const deptEntries = Object.entries(deptCounts).sort((a, b) => b[1] - a[1]);
@@ -55,7 +66,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
         {stats.map(s => (
           <Link key={s.label} href={s.href}
             className="bg-white rounded-xl p-4 border-t-4 shadow-sm hover:shadow-md transition-shadow"
