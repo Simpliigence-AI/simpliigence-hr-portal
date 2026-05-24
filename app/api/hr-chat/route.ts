@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
 
     if (!sqlRes.ok) throw new Error(`Anthropic error ${sqlRes.status}`);
     const sqlData = await sqlRes.json() as { content: { text: string }[] };
-    const sql = sqlData.content[0].text.trim();
+    const sql = sqlData.content[0].text.trim().replace(/;+$/, '');
 
     if (sql === 'CANNOT_ANSWER') {
       return NextResponse.json({
