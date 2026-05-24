@@ -28,6 +28,13 @@ TABLE: employees
   salary numeric
   appraisal text
   hike numeric                     -- hike percentage
+  photo_url text                   -- Supabase Storage URL for profile photo
+  ms_user_id text                  -- Microsoft 365 user object ID
+  ms_email text                    -- Microsoft 365 primary email
+  phone text                       -- phone number from Teams/M365
+  job_title text                   -- job title from M365
+  ms_department text               -- department from M365
+  ms_synced_at timestamptz         -- last Teams sync timestamp
 
 TABLE: monthly_reviews
   id uuid PRIMARY KEY

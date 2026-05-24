@@ -16,6 +16,7 @@ const NAV = [
   { href: '/policy',       label: 'Policies',         icon: '📋' },
   { href: '/actions',      label: 'Action Tracker',   icon: '✅' },
   { href: '/map',          label: 'World Map',        icon: '🌍' },
+  { href: '/teams-sync',   label: 'Teams Sync',       icon: '💼' },
   { href: '/admin',        label: 'Backup & Restore', icon: '🗄️' },
 ];
 
