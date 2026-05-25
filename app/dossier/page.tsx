@@ -12,7 +12,7 @@ const WFO_OPTS  = ['WFH','WFO','Hybrid'];
 const BGV_OPTS  = ['Verified','Pending','N/A','I-9'];
 const STATUS_OPTS = ['Active','Ex-Employee','Contractor'];
 const DOC_TYPES = ['Offer Letter','Employment Contract','BGV Report','ID Proof','Visa Document','SOW','NDA','Other'];
-const MODAL_TABS = ['Profile','Documents'] as const;
+const MODAL_TABS = ['Profile','Documents','Targets','Above & Beyond','Certifications'] as const;
 type ModalTab = typeof MODAL_TABS[number];
 
 interface EmployeeDoc {
@@ -64,6 +64,16 @@ export default function DossierPage() {
   const [docs,       setDocs]       = useState<EmployeeDoc[]>([]);
   const [docsLoading,setDocsLoading]= useState(false);
   const [uploading,  setUploading]  = useState(false);
+  const [abEntries,  setAbEntries]  = useState<{id:string;category:string;description:string;client_project:string|null;recorded_by:string|null;recorded_date:string;points:number|null}[]>([]);
+  const [abLoading,  setAbLoading]  = useState(false);
+  const [empCerts,   setEmpCerts]   = useState<{id:string;cert_name:string;issuer:string|null;issued_date:string|null;expiry_date:string|null}[]>([]);
+  const [certsLoading,setCertsLoading] = useState(false);
+  const [empTargets,  setEmpTargets]  = useState<string>('');
+  const [targetsLoading, setTargetsLoading] = useState(false);
+  const [targetsSaving,  setTargetsSaving]  = useState(false);
+  const [targetsDraft,   setTargetsDraft]   = useState<string>('');
+  const [targetsUpdatedBy, setTargetsUpdatedBy] = useState<string>('');
+  const [targetsUpdatedAt, setTargetsUpdatedAt] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [newDocForm, setNewDocForm] = useState({ name: '', doc_type: 'Other', sharepoint_url: '' });
   const photoRef = useRef<HTMLInputElement>(null);
@@ -74,11 +84,54 @@ export default function DossierPage() {
       .then(({ data }) => { setEmployees(data ?? []); setLoading(false); });
   }, []);
 
-  // Load docs when opening Documents tab
+  // Load docs / A&B / certs / targets when opening tabs
   useEffect(() => {
-    if (selected && modalTab === 'Documents') loadDocs(selected.id);
+    if (!selected) return;
+    if (modalTab === 'Documents')       loadDocs(selected.id);
+    if (modalTab === 'Above & Beyond')  loadAbEntries(selected.id);
+    if (modalTab === 'Certifications')  loadEmpCerts(selected.id);
+    if (modalTab === 'Targets')         loadTargets(selected.id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, modalTab]);
+
+  async function loadAbEntries(empId: string) {
+    setAbLoading(true);
+    const { data } = await supabase.from('above_beyond').select('id,category,description,client_project,recorded_by,recorded_date,points').eq('employee_id', empId).order('recorded_date', { ascending: false });
+    setAbEntries(data ?? []);
+    setAbLoading(false);
+  }
+
+  async function loadEmpCerts(empId: string) {
+    setCertsLoading(true);
+    const { data } = await supabase.from('certifications').select('id,cert_name,issuer,issued_date,expiry_date').eq('employee_id', empId).order('issued_date', { ascending: false });
+    setEmpCerts(data ?? []);
+    setCertsLoading(false);
+  }
+
+  async function loadTargets(empId: string) {
+    setTargetsLoading(true);
+    const { data } = await supabase.from('employee_targets').select('default_targets,updated_by,updated_at').eq('employee_id', empId).maybeSingle();
+    const t = data?.default_targets ?? '';
+    setEmpTargets(t);
+    setTargetsDraft(t);
+    setTargetsUpdatedBy(data?.updated_by ?? '');
+    setTargetsUpdatedAt(data?.updated_at ?? null);
+    setTargetsLoading(false);
+  }
+
+  async function saveTargets() {
+    if (!selected) return;
+    setTargetsSaving(true);
+    await supabase.from('employee_targets').upsert({
+      employee_id:     selected.id,
+      default_targets: targetsDraft,
+      updated_by:      targetsUpdatedBy || null,
+      updated_at:      new Date().toISOString(),
+    }, { onConflict: 'employee_id' });
+    setEmpTargets(targetsDraft);
+    setTargetsUpdatedAt(new Date().toISOString());
+    setTargetsSaving(false);
+  }
 
   async function loadDocs(empId: string) {
     setDocsLoading(true);
@@ -551,6 +604,138 @@ export default function DossierPage() {
                             className="text-gray-300 hover:text-red-400 text-sm transition-colors">✕</button>
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── TARGETS TAB ── */}
+              {!editing && modalTab === 'Targets' && (
+                <div className="p-6">
+                  <div className="mb-4">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-1">🎯 Default Monthly Targets</h3>
+                    <p className="text-xs text-gray-400">These targets auto-populate when a new performance review is created for this employee. Managers can override them at review time.</p>
+                  </div>
+
+                  {targetsLoading ? (
+                    <div className="text-sm text-gray-400 text-center py-8">Loading…</div>
+                  ) : (
+                    <div className="space-y-4">
+                      <textarea
+                        value={targetsDraft}
+                        onChange={e => setTargetsDraft(e.target.value)}
+                        rows={8}
+                        placeholder={`Enter default monthly targets for ${selected?.name?.split(' ')[0]}…\n\nExamples:\n• Complete sprint deliverables on time with < 5% rework\n• Maintain daily Salesforce activity updates\n• Support at least one client call per week\n• Upskill in [relevant tech] — 2 hrs/week`}
+                        className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none leading-relaxed"
+                      />
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Updated by</label>
+                        <input
+                          value={targetsUpdatedBy}
+                          onChange={e => setTargetsUpdatedBy(e.target.value)}
+                          placeholder="Manager name…"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        {targetsUpdatedAt ? (
+                          <p className="text-xs text-gray-400">
+                            Last saved {new Date(targetsUpdatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {empTargets !== targetsDraft && <span className="text-amber-500 ml-2">· Unsaved changes</span>}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-gray-400">No targets set yet</p>
+                        )}
+                        <button
+                          onClick={saveTargets}
+                          disabled={targetsSaving || targetsDraft === empTargets}
+                          className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-40 transition-colors"
+                        >
+                          {targetsSaving ? 'Saving…' : '✓ Save Targets'}
+                        </button>
+                      </div>
+
+                      {targetsDraft !== empTargets && (
+                        <button onClick={() => setTargetsDraft(empTargets)} className="text-xs text-gray-400 hover:text-gray-600">
+                          ↺ Discard changes
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── ABOVE & BEYOND TAB ── */}
+              {!editing && modalTab === 'Above & Beyond' && (
+                <div className="p-6">
+                  {abLoading ? (
+                    <div className="text-sm text-gray-400 text-center py-8">Loading…</div>
+                  ) : abEntries.length === 0 ? (
+                    <div className="text-center py-10 text-gray-400">
+                      <div className="text-3xl mb-2">⭐</div>
+                      <div className="text-sm">No Above & Beyond entries yet.</div>
+                      <a href="/above-beyond" className="text-xs text-blue-600 hover:underline mt-1 block">Add one →</a>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {abEntries.map(e => (
+                        <div key={e.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                          <div className="flex items-start gap-2 flex-wrap mb-1">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              e.category === 'Overtime' ? 'bg-blue-100 text-blue-700' :
+                              e.category === 'Extra Project' ? 'bg-green-100 text-green-700' :
+                              e.category === 'Mentoring' ? 'bg-purple-100 text-purple-700' :
+                              'bg-gray-100 text-gray-600'}`}>{e.category}</span>
+                            {e.points && <span className="text-xs text-amber-600 font-medium">{'★'.repeat(e.points)} {e.points}/5</span>}
+                          </div>
+                          <p className="text-sm text-gray-800">{e.description}</p>
+                          <div className="flex gap-3 mt-1.5 text-xs text-gray-400">
+                            {e.client_project && <span>📁 {e.client_project}</span>}
+                            {e.recorded_by && <span>👤 {e.recorded_by}</span>}
+                            <span>📅 {new Date(e.recorded_date).toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'})}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── CERTIFICATIONS TAB ── */}
+              {!editing && modalTab === 'Certifications' && (
+                <div className="p-6">
+                  {certsLoading ? (
+                    <div className="text-sm text-gray-400 text-center py-8">Loading…</div>
+                  ) : empCerts.length === 0 ? (
+                    <div className="text-center py-10 text-gray-400">
+                      <div className="text-3xl mb-2">🏅</div>
+                      <div className="text-sm">No certifications recorded yet.</div>
+                      <a href="/certifications" className="text-xs text-blue-600 hover:underline mt-1 block">Add one →</a>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {empCerts.map(c => {
+                        const days = c.expiry_date ? Math.ceil((new Date(c.expiry_date).getTime() - Date.now()) / 86400000) : null;
+                        return (
+                          <div key={c.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100 flex items-center gap-4">
+                            <div className="text-2xl">🏅</div>
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900 text-sm">{c.cert_name}</div>
+                              {c.issuer && <div className="text-xs text-gray-500">{c.issuer}</div>}
+                              <div className="flex gap-3 mt-1 text-xs text-gray-400">
+                                {c.issued_date && <span>Issued {new Date(c.issued_date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</span>}
+                                {c.expiry_date && (
+                                  <span className={days !== null && days < 0 ? 'text-red-500 font-medium' : days !== null && days <= 90 ? 'text-amber-600 font-medium' : ''}>
+                                    {days !== null && days < 0 ? '🚨 Expired' : days !== null && days <= 30 ? `⚠️ Expires in ${days}d` : `Expires ${new Date(c.expiry_date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}`}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

@@ -154,8 +154,17 @@ export default function PerformancePage() {
     setSelected(emp); setMode('history'); setActiveReview(null); loadReviews(emp.id);
   }
 
-  function startNewReview() {
-    setForm({ ...emptyForm(), review_month: reviewMonth }); setActiveReview(null); setMode('form');
+  async function startNewReview() {
+    // Pre-populate targets from employee_targets table
+    const { data: targetRow } = await supabase
+      .from('employee_targets')
+      .select('default_targets')
+      .eq('employee_id', selected!.id)
+      .maybeSingle();
+    const defaultTargets = targetRow?.default_targets ?? '';
+    setForm({ ...emptyForm(), review_month: reviewMonth, targets: defaultTargets });
+    setActiveReview(null);
+    setMode('form');
   }
 
   function editReview(r: MonthlyReview) {

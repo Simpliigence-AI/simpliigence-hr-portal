@@ -15,6 +15,8 @@ const NAV = [
   { href: '/engagement',   label: 'Engagement',       icon: '💬' },
   { href: '/policy',       label: 'Policies',         icon: '📋' },
   { href: '/actions',      label: 'Action Tracker',   icon: '✅' },
+  { href: '/certifications',label: 'Certifications',   icon: '🏅' },
+  { href: '/above-beyond', label: 'Above & Beyond',   icon: '⭐' },
   { href: '/map',          label: 'World Map',        icon: '🌍' },
   { href: '/teams-sync',   label: 'Teams Sync',       icon: '💼' },
   { href: '/admin',        label: 'Backup & Restore', icon: '🗄️' },
@@ -100,7 +102,7 @@ export default function Sidebar() {
           <span className="w-5 text-center">↩</span>
           Sign out
         </button>
-        <div className="text-xs text-white/30 text-center mt-2">HR Portal v1.0 · May 2026</div>
+        <div className="text-xs text-white/30 text-center mt-2">HR Portal v1.1 · May 2026</div>
       </div>
     </aside>
   );

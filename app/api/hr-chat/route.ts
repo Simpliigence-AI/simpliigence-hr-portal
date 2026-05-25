@@ -81,6 +81,31 @@ TABLE: recognition_awards
   award_date date
   reason text
   awarded_by text
+
+TABLE: employee_targets
+  employee_id   text PRIMARY KEY REFERENCES employees(id)
+  default_targets text                 -- default monthly targets that auto-populate performance reviews
+  updated_by    text
+  updated_at    timestamptz
+
+TABLE: certifications
+  id          uuid PRIMARY KEY
+  employee_id text REFERENCES employees(id)
+  cert_name   text
+  issuer      text
+  issued_date date
+  expiry_date date
+  notes       text
+
+TABLE: above_beyond
+  id           uuid PRIMARY KEY
+  employee_id  text REFERENCES employees(id)
+  category     text                  -- 'Overtime','Extra Project','Client Escalation Handled','Mentoring','Innovation','Process Improvement','Recruitment Support','Other'
+  description  text
+  client_project text
+  recorded_by  text
+  recorded_date date
+  points       integer               -- 1=Good, 2=Great, 3=Excellent, 4=Outstanding, 5=Exceptional
 `;
 
 const SQL_SYSTEM = `You are a SQL generator for the Simpliigence HR Portal PostgreSQL database.
