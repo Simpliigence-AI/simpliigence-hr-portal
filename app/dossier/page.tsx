@@ -332,6 +332,16 @@ export default function DossierPage() {
             const isC = isContractor(e);
             const isE = isEx(e);
             const regionFlag = e.region === 'India' ? '🇮🇳' : e.region === 'USA' ? '🇺🇸' : e.region === 'Canada' ? '🇨🇦' : '';
+            const bdayDays = (() => {
+              const b = (e as never as {birthday:string|null}).birthday;
+              if (!b) return null;
+              const bd = new Date(b + 'T00:00:00');
+              const tod = new Date(); tod.setHours(0,0,0,0);
+              const next = new Date(tod.getFullYear(), bd.getMonth(), bd.getDate());
+              if (next < tod) next.setFullYear(tod.getFullYear() + 1);
+              return Math.round((next.getTime() - tod.getTime()) / 86400000);
+            })();
+            const isBdaySoon = bdayDays !== null && bdayDays <= 7;
             return (
               <div key={e.id} onClick={() => openProfile(e)}
                 className={cn('bg-white rounded-xl shadow-sm border p-4 cursor-pointer hover:shadow-md transition-all',
@@ -357,6 +367,12 @@ export default function DossierPage() {
                     <span>{e.location}</span>
                   </div>
                   <div className="text-xs font-medium text-blue-600">{calcTenure(e.joined, (e as never as {termination_date:string|null}).termination_date)}</div>
+                  {isBdaySoon && (
+                    <div className={cn('text-xs font-semibold px-2 py-0.5 rounded-full',
+                      bdayDays === 0 ? 'bg-pink-100 text-pink-700' : 'bg-yellow-50 text-yellow-700')}>
+                      {bdayDays === 0 ? '🎂 Birthday today!' : bdayDays === 1 ? '🎈 Birthday tomorrow' : `🎉 Birthday in ${bdayDays}d`}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -487,6 +503,15 @@ export default function DossierPage() {
                     <Row label="Manager"     value={selected.manager} />
                     <Row label="Join Date"   value={formatDate(selected.joined)} />
                     <Row label="Tenure"      value={calcTenure(selected.joined, (selected as never as {termination_date:string|null}).termination_date)} highlight="blue" />
+                    {(selected as never as {birthday:string|null}).birthday && (() => {
+                      const bday = new Date((selected as never as {birthday:string}).birthday + 'T00:00:00');
+                      const today = new Date(); today.setHours(0,0,0,0);
+                      const next = new Date(today.getFullYear(), bday.getMonth(), bday.getDate());
+                      if (next < today) next.setFullYear(today.getFullYear() + 1);
+                      const days = Math.round((next.getTime() - today.getTime()) / 86400000);
+                      const label = days === 0 ? '🎂 Today!' : days === 1 ? '🎈 Tomorrow' : days <= 7 ? `🎉 In ${days} days` : bday.toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+                      return <Row label="Birthday" value={label} highlight={days <= 7 ? 'blue' : undefined} />;
+                    })()}
                     {(selected as never as {termination_date:string|null}).termination_date &&
                       <Row label="Last Working Day" value={formatDate((selected as never as {termination_date:string|null}).termination_date)} highlight="red" />}
                   </Section>
@@ -549,6 +574,7 @@ export default function DossierPage() {
                     <EField label="Location"       k="location"         editForm={editForm} F={F} required />
                     <EField label="Manager"        k="manager"          editForm={editForm} F={F} required />
                     <EField label="Join Date"      k="joined"           editForm={editForm} F={F} type="date" />
+                    <EField label="Date of Birth"  k="birthday"         editForm={editForm} F={F} type="date" />
                     <EField label="Last Working Day (termination)" k="termination_date" editForm={editForm} F={F} type="date" />
                     <EField label="Phone"          k="phone"            editForm={editForm} F={F} />
                     <EField label="Emergency"      k="emergency"        editForm={editForm} F={F} />

@@ -6,6 +6,14 @@ import HrChat from '@/components/HrChat';
 
 export const revalidate = 60;
 
+function getNextBirthday(birthdayStr: string): Date {
+  const bd  = new Date(birthdayStr + 'T00:00:00');
+  const tod = new Date(); tod.setHours(0, 0, 0, 0);
+  const next = new Date(tod.getFullYear(), bd.getMonth(), bd.getDate());
+  if (next < tod) next.setFullYear(tod.getFullYear() + 1);
+  return next;
+}
+
 async function getStats() {
   const [{ data: activeData }, { data: allData }] = await Promise.all([
     supabase.from('employees').select('*').eq('active', true),
@@ -37,11 +45,23 @@ async function getStats() {
     .sort((a, b) => new Date(b.joined!).getTime() - new Date(a.joined!).getTime())
     .slice(0, 8);
 
-  return { all, inactive, india, uscan, newJoin, visaAlerts, deptCounts, recentJoiners };
+  // Upcoming birthdays — next 30 days among active employees
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const upcomingBirthdays = all
+    .filter(e => (e as never as {birthday:string|null}).birthday)
+    .map(e => {
+      const next = getNextBirthday((e as never as {birthday:string}).birthday);
+      const days = Math.round((next.getTime() - today.getTime()) / 86400000);
+      return { ...e, _bdayDays: days, _nextBday: next };
+    })
+    .filter(e => e._bdayDays <= 30)
+    .sort((a, b) => a._bdayDays - b._bdayDays);
+
+  return { all, inactive, india, uscan, newJoin, visaAlerts, deptCounts, recentJoiners, upcomingBirthdays };
 }
 
 export default async function DashboardPage() {
-  const { all, inactive, india, uscan, newJoin, visaAlerts, deptCounts, recentJoiners } = await getStats();
+  const { all, inactive, india, uscan, newJoin, visaAlerts, deptCounts, recentJoiners, upcomingBirthdays } = await getStats();
 
   const stats = [
     { label: 'Active Headcount',  value: all.length,         color: '#1e88e5', href: '/dossier'    },
@@ -58,12 +78,23 @@ export default async function DashboardPage() {
   return (
     <div className="p-8">
       {/* Welcome */}
-      <div className="mb-8 bg-gradient-to-r from-[#0f1e3d] to-[#1a3a6b] rounded-2xl p-6 text-white">
+      <div className="mb-6 bg-gradient-to-r from-[#0f1e3d] to-[#1a3a6b] rounded-2xl p-6 text-white">
         <h1 className="text-2xl font-bold mb-1">👋 Welcome back</h1>
         <p className="text-white/70 text-sm">
           Simpliigence HR Portal · {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
       </div>
+
+      {/* Today's birthday banner */}
+      {upcomingBirthdays.filter(e => e._bdayDays === 0).map(e => (
+        <div key={e.id} className="mb-4 flex items-center gap-4 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-2xl px-5 py-4 shadow-md">
+          <span className="text-4xl">🎂</span>
+          <div>
+            <p className="font-bold text-lg leading-tight">Happy Birthday, {e.name.split(' ')[0]}!</p>
+            <p className="text-pink-100 text-sm">{e.role} · {e.location} — Wishing them a wonderful day 🎉</p>
+          </div>
+        </div>
+      ))}
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
@@ -137,6 +168,39 @@ export default async function DashboardPage() {
             </div>
           </div>
         )}
+
+        {/* Birthday widget */}
+        <div className={`bg-white rounded-xl shadow-sm p-5 ${upcomingBirthdays.some(e => e._bdayDays === 0) ? 'border-l-4 border-pink-400' : upcomingBirthdays.length > 0 ? 'border-l-4 border-yellow-300' : ''}`}>
+          <h2 className="font-semibold text-gray-800 mb-4">🎂 Upcoming Birthdays</h2>
+          {upcomingBirthdays.length === 0 ? (
+            <p className="text-sm text-gray-400 py-4 text-center">No birthdays in the next 30 days.<br/><span className="text-xs">Add dates of birth in HR Dossier → Edit employee.</span></p>
+          ) : (
+            <div className="space-y-3">
+              {upcomingBirthdays.map(e => {
+                const days = e._bdayDays;
+                const isToday = days === 0;
+                const isTomorrow = days === 1;
+                const dateLabel = isToday ? '🎂 Today!' : isTomorrow ? '🎈 Tomorrow' : days <= 7 ? `🎉 In ${days} days` : e._nextBday.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+                return (
+                  <div key={e.id} className={`flex items-center gap-3 rounded-lg px-3 py-2 ${isToday ? 'bg-pink-50 border border-pink-200' : isTomorrow ? 'bg-yellow-50' : ''}`}>
+                    <Avatar name={e.name} photoUrl={e.photo_url} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{e.name}</div>
+                      <div className="text-xs text-gray-500">{e.role} · {e.location}</div>
+                    </div>
+                    <span className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${
+                      isToday    ? 'bg-pink-100 text-pink-700' :
+                      isTomorrow ? 'bg-yellow-100 text-yellow-700' :
+                      days <= 7  ? 'bg-blue-100 text-blue-700' :
+                                   'bg-gray-100 text-gray-600'}`}>
+                      {dateLabel}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Region split */}
         <div className="bg-white rounded-xl shadow-sm p-5">
