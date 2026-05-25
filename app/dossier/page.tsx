@@ -16,6 +16,29 @@ const DOC_TYPES = ['Offer Letter','Employment Contract','BGV Report','ID Proof',
 const MODAL_TABS = ['Profile','Documents','Targets','Above & Beyond','Certifications'] as const;
 type ModalTab = typeof MODAL_TABS[number];
 
+interface ColDef { key: string; label: string; always?: boolean; def?: boolean; editable?: boolean; type?: string; opts?: string[] }
+const COL_DEFS: ColDef[] = [
+  { key: 'name',        label: 'Employee',      always: true },
+  { key: 'role',        label: 'Role',          def: true,  editable: true },
+  { key: 'dept',        label: 'Department',    def: true,  editable: true, type: 'select', opts: DEPTS },
+  { key: 'location',    label: 'Location',      def: false, editable: true },
+  { key: 'region',      label: 'Region',        def: true,  editable: true, type: 'select', opts: ['India','USA','Canada'] },
+  { key: 'manager',     label: 'Manager',       def: true,  editable: true },
+  { key: 'wfo',         label: 'Work Mode',     def: false, editable: true, type: 'select', opts: WFO_OPTS },
+  { key: 'type',        label: 'Type',          def: true  },
+  { key: 'status',      label: 'Status',        def: true,  editable: true, type: 'select', opts: STATUS_OPTS },
+  { key: 'joined',      label: 'Join Date',     def: false, editable: true, type: 'date' },
+  { key: 'birthday',    label: 'Birthday',      def: false, editable: true, type: 'date' },
+  { key: 'bgv',         label: 'BGV',           def: false, editable: true, type: 'select', opts: BGV_OPTS },
+  { key: 'visa',        label: 'Visa',          def: false, editable: true },
+  { key: 'visa_expiry', label: 'Visa Expiry',   def: false, editable: true, type: 'date' },
+  { key: 'sow_expiry',  label: 'SOW Expiry',    def: false, editable: true, type: 'date' },
+  { key: 'phone',       label: 'Phone',         def: false, editable: true },
+  { key: 'skills',      label: 'Skills',        def: false, editable: true },
+  { key: 'salary',      label: 'Salary (₹/mo)', def: false, editable: true, type: 'number' },
+  { key: 'tenure',      label: 'Tenure',        def: true  },
+];
+
 interface EmployeeDoc {
   id: string; employee_id: string; name: string; doc_type: string | null;
   url: string | null; sharepoint_url: string | null; uploaded_by: string | null; created_at: string;
@@ -82,6 +105,10 @@ function DossierInner() {
   const [targetsUpdatedAt, setTargetsUpdatedAt] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [newDocForm, setNewDocForm] = useState({ name: '', doc_type: 'Other', sharepoint_url: '' });
+  const [colVis,        setColVis]        = useState<Record<string, boolean>>({});
+  const [colPickerOpen, setColPickerOpen] = useState(false);
+  const [rowDrafts,     setRowDrafts]     = useState<Record<string, Record<string, unknown>>>({});
+  const [rowSaving,     setRowSaving]     = useState<Record<string, boolean>>({});
   const photoRef = useRef<HTMLInputElement>(null);
   const docRef   = useRef<HTMLInputElement>(null);
 
@@ -243,6 +270,121 @@ function DossierInner() {
   const F = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setEditForm(f => ({ ...f, [key]: e.target.value || null }));
 
+  // ── Column visibility ─────────────────────────────────────────
+  const isColVisible = (key: string) => {
+    const col = COL_DEFS.find(c => c.key === key);
+    if (!col) return false;
+    if (col.always) return true;
+    return colVis[key] !== undefined ? colVis[key] : (col.def ?? false);
+  };
+  const visibleCols = COL_DEFS.filter(c => isColVisible(c.key));
+
+  // ── Inline row editing ────────────────────────────────────────
+  function startRowEdit(e: Employee) {
+    setRowDrafts(d => ({ ...d, [e.id]: {
+      role: e.role ?? '', dept: (e as never as {dept:string}).dept ?? '',
+      location: e.location ?? '', region: e.region ?? '',
+      manager: e.manager ?? '', wfo: e.wfo ?? '',
+      status: e.status ?? 'Active',
+      joined: e.joined ?? '', birthday: (e as never as {birthday:string|null}).birthday ?? '',
+      bgv: e.bgv ?? '', visa: e.visa ?? '',
+      visa_expiry: e.visa_expiry ?? '', sow_expiry: e.sow_expiry ?? '',
+      phone: e.phone ?? '',
+      skills: (e.skills ?? []).join(', '),
+      salary: e.salary != null ? String(e.salary) : '',
+    } }));
+  }
+  function cancelRowEdit(empId: string) {
+    setRowDrafts(d => { const n = { ...d }; delete n[empId]; return n; });
+  }
+  async function saveRow(empId: string) {
+    const draft = rowDrafts[empId];
+    if (!draft) return;
+    setRowSaving(s => ({ ...s, [empId]: true }));
+    const payload: Record<string, unknown> = { ...draft };
+    // Coerce types
+    if (typeof payload.skills === 'string')
+      payload.skills = (payload.skills as string).split(',').map((s: string) => s.trim()).filter(Boolean);
+    if (typeof payload.salary === 'string')
+      payload.salary = payload.salary ? Number(payload.salary) : null;
+    // Nullify empty date strings
+    for (const k of ['joined','birthday','visa_expiry','sow_expiry']) {
+      if (payload[k] === '') payload[k] = null;
+    }
+    const { data } = await supabase.from('employees').update(payload).eq('id', empId).select().single();
+    if (data) setEmployees(es => es.map(e => e.id === data.id ? data : e));
+    setRowDrafts(d => { const n = { ...d }; delete n[empId]; return n; });
+    setRowSaving(s => { const n = { ...s }; delete n[empId]; return n; });
+  }
+  async function saveAllRows() {
+    await Promise.all(Object.keys(rowDrafts).map(id => saveRow(id)));
+  }
+
+  // ── List cell renderers ────────────────────────────────────────
+  function renderListCell(e: Employee, key: string) {
+    const isC = isContractor(e);
+    const flag = e.region === 'India' ? '🇮🇳' : e.region === 'USA' ? '🇺🇸' : e.region === 'Canada' ? '🇨🇦' : '';
+    switch (key) {
+      case 'name':
+        return (
+          <div className="flex items-center gap-2">
+            <div className="relative shrink-0">
+              <Avatar name={e.name} photoUrl={e.photo_url} size="sm" />
+              {isC && <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center border border-white"><span className="text-white text-[8px] font-black">C</span></div>}
+            </div>
+            <span className="font-medium text-sm whitespace-nowrap">{e.name}</span>
+          </div>
+        );
+      case 'role':        return <span className="text-xs text-gray-600">{e.role ?? '—'}</span>;
+      case 'dept':        return e.dept ? <span className="text-xs px-2 py-0.5 rounded-full text-white whitespace-nowrap" style={{ backgroundColor: getDeptColor(e.dept) }}>{e.dept}</span> : <span className="text-gray-400 text-xs">—</span>;
+      case 'location':    return <span className="text-xs text-gray-600 whitespace-nowrap">{e.location ?? '—'}</span>;
+      case 'region':      return <span className="text-xs text-gray-600 whitespace-nowrap">{flag && <span className="mr-0.5">{flag}</span>}{e.region ?? '—'}</span>;
+      case 'manager':     return <span className="text-xs text-gray-600 whitespace-nowrap">{e.manager ?? '—'}</span>;
+      case 'wfo':         return e.wfo ? <span className="text-xs px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">{e.wfo}</span> : <span className="text-gray-400 text-xs">—</span>;
+      case 'type':        return <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap', isC ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700')}>{isC ? 'Contractor' : 'FTE'}</span>;
+      case 'status': { const { label: sl, cls: sc } = statusBadge(e as never); return <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap', sc)}>{sl}</span>; }
+      case 'joined':      return <span className="text-xs text-gray-600 whitespace-nowrap">{formatDate(e.joined)}</span>;
+      case 'birthday':    return <span className="text-xs text-gray-600 whitespace-nowrap">{formatDate((e as never as {birthday:string|null}).birthday)}</span>;
+      case 'bgv':         return e.bgv ? <span className="text-xs px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded whitespace-nowrap">{e.bgv}</span> : <span className="text-gray-400 text-xs">—</span>;
+      case 'visa':        return <span className="text-xs text-gray-600">{e.visa ?? '—'}</span>;
+      case 'visa_expiry': { const exp = e.visa_expiry; const soon = exp && new Date(exp) < new Date(Date.now()+90*86400000); return <span className={cn('text-xs whitespace-nowrap', soon ? 'text-red-600 font-medium' : 'text-gray-600')}>{formatDate(exp)}</span>; }
+      case 'sow_expiry':  return <span className="text-xs text-gray-600 whitespace-nowrap">{formatDate(e.sow_expiry)}</span>;
+      case 'phone':       return <span className="text-xs text-gray-600">{e.phone ?? '—'}</span>;
+      case 'skills':      return e.skills?.length ? (
+        <div className="flex flex-wrap gap-1 max-w-[180px]">
+          {e.skills.slice(0,3).map(s => <span key={s} className="text-xs px-1.5 bg-blue-50 text-blue-600 rounded">{s}</span>)}
+          {e.skills.length > 3 && <span className="text-xs text-gray-400">+{e.skills.length-3}</span>}
+        </div>
+      ) : <span className="text-gray-400 text-xs">—</span>;
+      case 'salary':      return <span className="text-xs text-gray-600 whitespace-nowrap">{e.salary ? `₹${Number(e.salary).toLocaleString('en-IN')}` : '—'}</span>;
+      case 'tenure':      return <span className="text-xs font-medium text-blue-600 whitespace-nowrap">{calcTenure(e.joined, (e as never as {termination_date:string|null}).termination_date)}</span>;
+      default:            return <span className="text-gray-400 text-xs">—</span>;
+    }
+  }
+
+  function renderEditCell(empId: string, col: ColDef) {
+    if (!col.editable) {
+      const emp = employees.find(e => e.id === empId);
+      return emp ? renderListCell(emp, col.key) : null;
+    }
+    const draft = rowDrafts[empId] ?? {};
+    const val   = (draft[col.key] ?? '') as string;
+    const cls   = 'w-full px-2 py-1 text-xs border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white';
+    const set   = (v: unknown) => setRowDrafts(d => ({ ...d, [empId]: { ...d[empId], [col.key]: v } }));
+    if (col.type === 'select' && col.opts) {
+      return (
+        <select value={val} onChange={e => set(e.target.value)} className={cn(cls, 'min-w-[90px]')}>
+          <option value="">—</option>
+          {col.opts.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      );
+    }
+    if (col.key === 'skills') {
+      return <input type="text" value={val} onChange={e => set(e.target.value)} placeholder="comma-separated" className={cn(cls, 'min-w-[140px]')} />;
+    }
+    return <input type={col.type ?? 'text'} value={val} onChange={e => set(e.target.value || (col.type === 'date' ? '' : null))} className={cn(cls, col.type === 'date' ? 'min-w-[120px]' : 'min-w-[90px]')} />;
+  }
+
   if (loading) return <div className="p-8 text-gray-400 text-sm">Loading employees…</div>;
 
   // ── Counts for chips ───────────────────────────────────────────
@@ -278,9 +420,37 @@ function DossierInner() {
           <h1 className="text-2xl font-bold text-gray-900">HR Dossier</h1>
           <p className="text-xs text-gray-400 mt-0.5">{filtered.length} of {employees.length} employees shown</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setView('grid')} className={cn('px-3 py-1.5 text-sm rounded-lg border', view==='grid' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-600')}>Grid</button>
-          <button onClick={() => setView('list')} className={cn('px-3 py-1.5 text-sm rounded-lg border', view==='list' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-600')}>List</button>
+        <div className="flex items-center gap-2">
+          {view === 'list' && (
+            <div className="relative">
+              <button onClick={() => setColPickerOpen(p => !p)}
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center gap-1.5">
+                ⚙ Columns <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0 rounded-full font-bold">{visibleCols.length}</span>
+              </button>
+              {colPickerOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setColPickerOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20 p-3 w-56 max-h-80 overflow-y-auto">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Visible Columns</span>
+                      <button onClick={() => setColVis({})} className="text-xs text-blue-600 hover:underline">Reset</button>
+                    </div>
+                    {COL_DEFS.map(col => (
+                      <label key={col.key} className={cn('flex items-center gap-2 py-1 cursor-pointer hover:text-blue-600 text-sm', col.always ? 'opacity-50' : '')}>
+                        <input type="checkbox" checked={isColVisible(col.key)} disabled={!!col.always}
+                          onChange={e => setColVis(v => ({ ...v, [col.key]: e.target.checked }))}
+                          className="rounded" />
+                        {col.label}
+                        {col.always && <span className="text-xs text-gray-400 ml-auto">always</span>}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          <button onClick={() => setView('grid')} className={cn('px-3 py-1.5 text-sm rounded-lg border', view==='grid' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-600')}>⊞ Grid</button>
+          <button onClick={() => setView('list')} className={cn('px-3 py-1.5 text-sm rounded-lg border', view==='list' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-600')}>☰ List</button>
         </div>
       </div>
 
@@ -390,53 +560,83 @@ function DossierInner() {
 
       {/* List */}
       {view === 'list' && (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm overflow-auto">
+          {/* Unsaved changes bar */}
+          {Object.keys(rowDrafts).length > 0 && (
+            <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between sticky top-0 z-10">
+              <span className="text-xs text-amber-700 font-medium">
+                ✏️ {Object.keys(rowDrafts).length} row{Object.keys(rowDrafts).length > 1 ? 's' : ''} with unsaved changes
+              </span>
+              <div className="flex gap-2">
+                <button onClick={() => setRowDrafts({})} className="px-3 py-1 text-xs text-gray-500 border rounded-lg hover:bg-gray-50">Discard All</button>
+                <button onClick={saveAllRows} className="px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">💾 Save All Changes</button>
+              </div>
+            </div>
+          )}
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                {['Employee','Role','Department','Region','Manager','Type','Status','Tenure'].map(h => (
-                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                {visibleCols.map(col => (
+                  <th key={col.key} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                    {col.label}
+                  </th>
                 ))}
+                <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center whitespace-nowrap w-24">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-gray-100">
               {filtered.map(e => {
-                const { label, cls } = statusBadge(e as never);
+                const isEditing = !!rowDrafts[e.id];
+                const isSaving  = !!rowSaving[e.id];
                 const isC = isContractor(e);
-                const regionFlag = e.region === 'India' ? '🇮🇳' : e.region === 'USA' ? '🇺🇸' : e.region === 'Canada' ? '🇨🇦' : '';
                 return (
-                  <tr key={e.id} onClick={() => openProfile(e)}
-                    className={cn('cursor-pointer transition-colors',
-                      isC ? 'bg-orange-50/40 hover:bg-orange-50' : 'hover:bg-blue-50')}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="relative shrink-0">
-                          <Avatar name={e.name} photoUrl={e.photo_url} size="sm" />
-                          {isC && <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center border border-white"><span className="text-white text-[8px] font-black">C</span></div>}
+                  <tr key={e.id} className={cn('transition-colors',
+                    isEditing ? 'bg-blue-50/50 ring-1 ring-inset ring-blue-200' :
+                    isC       ? 'bg-orange-50/30 hover:bg-orange-50/60' :
+                                'hover:bg-blue-50/30')}>
+                    {visibleCols.map(col => (
+                      <td key={col.key} className={cn('px-4', isEditing ? 'py-1.5' : 'py-2.5')}>
+                        {isEditing
+                          ? renderEditCell(e.id, col)
+                          : <div onClick={() => openProfile(e)} className="cursor-pointer">
+                              {renderListCell(e, col.key)}
+                            </div>
+                        }
+                      </td>
+                    ))}
+                    <td className="px-4 py-2 text-center">
+                      {isEditing ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => saveRow(e.id)} disabled={isSaving}
+                            className="px-2.5 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium" title="Save">
+                            {isSaving ? '…' : '✓ Save'}
+                          </button>
+                          <button onClick={() => cancelRowEdit(e.id)} disabled={isSaving}
+                            className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg hover:bg-gray-200" title="Cancel">
+                            ✕
+                          </button>
                         </div>
-                        <span className="font-medium">{e.name}</span>
-                      </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => startRowEdit(e)}
+                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit row inline">
+                            ✏️
+                          </button>
+                          <button onClick={() => openProfile(e)}
+                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" title="View full profile">
+                            👤
+                          </button>
+                        </div>
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">{e.role}</td>
-                    <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: getDeptColor(e.dept ?? '') }}>{e.dept}</span></td>
-                    <td className="px-4 py-3 text-sm">
-                      <span>{regionFlag} </span>
-                      <span className="text-gray-600 text-xs">{e.location}</span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">{e.manager ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium',
-                        isC ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700')}>
-                        {isC ? 'Contractor' : 'FTE'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3"><span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', cls)}>{label}</span></td>
-                    <td className="px-4 py-3 text-blue-600 font-medium text-xs">{calcTenure(e.joined, (e as never as {termination_date:string|null}).termination_date)}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+          {filtered.length === 0 && (
+            <div className="text-center text-gray-400 text-sm py-12">No employees match the current filters.</div>
+          )}
         </div>
       )}
 
