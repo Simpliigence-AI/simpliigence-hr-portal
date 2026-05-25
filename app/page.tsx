@@ -64,12 +64,12 @@ export default async function DashboardPage() {
   const { all, inactive, india, uscan, newJoin, visaAlerts, deptCounts, recentJoiners, upcomingBirthdays } = await getStats();
 
   const stats = [
-    { label: 'Active Headcount',  value: all.length,         color: '#1e88e5', href: '/dossier'    },
-    { label: 'Inactive / Alumni', value: inactive.length,    color: '#78909c', href: '/dossier'    },
-    { label: 'India Team',        value: india.length,       color: '#43a047', href: '/dossier?region=India' },
-    { label: 'US / Canada Team',  value: uscan.length,       color: '#9c27b0', href: '/dossier?region=USA'   },
-    { label: 'New Joiners (90d)', value: newJoin.length,     color: '#fb8c00', href: '/onboarding' },
-    { label: 'Visa Alerts',       value: visaAlerts.length,  color: '#e53935', href: '/dossier'    },
+    { label: 'Active Headcount',  value: all.length,         color: '#1e88e5', href: '/dossier?status=Active'      },
+    { label: 'Inactive / Alumni', value: inactive.length,    color: '#78909c', href: '/dossier?status=Ex-Employee' },
+    { label: 'India Team',        value: india.length,       color: '#43a047', href: '/dossier?region=India'       },
+    { label: 'US / Canada Team',  value: uscan.length,       color: '#9c27b0', href: '/dossier?region=USA'         },
+    { label: 'Contractors',       value: all.filter(e => (e as never as {type:string}).type === 'Contractor' || e.status === 'Contractor').length, color: '#fb8c00', href: '/dossier?status=Contractor' },
+    { label: 'Visa Alerts',       value: visaAlerts.length,  color: '#e53935', href: '/dossier'                    },
   ];
 
   const deptEntries = Object.entries(deptCounts).sort((a, b) => b[1] - a[1]);

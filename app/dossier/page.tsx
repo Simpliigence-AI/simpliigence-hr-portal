@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import type { Employee } from '@/lib/database.types';
 import { formatDate, getDeptColor, cn } from '@/lib/utils';
@@ -47,12 +48,13 @@ function statusBadge(emp: { status?: string; type?: string | null; termination_d
 
 // ─── Main Page ────────────────────────────────────────────────
 export default function DossierPage() {
+  const searchParams = useSearchParams();
   const [employees,  setEmployees]  = useState<Employee[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [search,     setSearch]     = useState('');
   const [deptF,      setDeptF]      = useState('All');
-  const [regionF,    setRegionF]    = useState('All');
-  const [statusF,    setStatusF]    = useState('All');
+  const [regionF,    setRegionF]    = useState(() => searchParams.get('region') ?? 'All');
+  const [statusF,    setStatusF]    = useState(() => searchParams.get('status') ?? 'All');
   const [selected,   setSelected]   = useState<Employee | null>(null);
   const [modalTab,   setModalTab]   = useState<ModalTab>('Profile');
   const [editing,    setEditing]    = useState(false);
