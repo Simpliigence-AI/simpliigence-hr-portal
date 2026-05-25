@@ -146,6 +146,11 @@ function DossierInner() {
     setDocsLoading(false);
   }
 
+  // ── Employee classification helpers (must be before filtered) ─
+  const isContractor = (e: Employee) => (e as never as {type:string}).type === 'Contractor' || e.status === 'Contractor';
+  const isEx         = (e: Employee) => !!(e as never as {termination_date:string|null}).termination_date || e.status === 'Ex-Employee';
+  const isActiveFTE  = (e: Employee) => !isEx(e) && !isContractor(e);
+
   // ── Filters ──────────────────────────────────────────────────
   const filtered = employees.filter(e => {
     const q = search.toLowerCase();
@@ -153,8 +158,9 @@ function DossierInner() {
     if (deptF !== 'All' && e.dept !== deptF) return false;
     if (regionF !== 'All' && e.region !== regionF) return false;
     if (statusF !== 'All') {
-      const { label } = statusBadge(e as never);
-      if (label !== statusF) return false;
+      if (statusF === 'Contractor'  && !isContractor(e)) return false;
+      if (statusF === 'Ex-Employee' && !isEx(e))         return false;
+      if (statusF === 'Active'      && !isActiveFTE(e))  return false;
     }
     return true;
   });
@@ -240,10 +246,6 @@ function DossierInner() {
   if (loading) return <div className="p-8 text-gray-400 text-sm">Loading employees…</div>;
 
   // ── Counts for chips ───────────────────────────────────────────
-  const isContractor = (e: Employee) => (e as never as {type:string}).type === 'Contractor' || e.status === 'Contractor';
-  const isEx         = (e: Employee) => !!(e as never as {termination_date:string|null}).termination_date || e.status === 'Ex-Employee';
-  const isActiveFTE  = (e: Employee) => !isEx(e) && !isContractor(e);
-
   const counts = {
     all:         employees.length,
     activeFTE:   employees.filter(isActiveFTE).length,
