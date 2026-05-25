@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import type { Employee } from '@/lib/database.types';
@@ -48,6 +48,10 @@ function statusBadge(emp: { status?: string; type?: string | null; termination_d
 
 // ─── Main Page ────────────────────────────────────────────────
 export default function DossierPage() {
+  return <Suspense fallback={<div className="p-8 text-gray-400 text-sm">Loading…</div>}><DossierInner /></Suspense>;
+}
+
+function DossierInner() {
   const searchParams = useSearchParams();
   const [employees,  setEmployees]  = useState<Employee[]>([]);
   const [loading,    setLoading]    = useState(true);
