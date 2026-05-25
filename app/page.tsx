@@ -1,10 +1,26 @@
 import { supabase } from '@/lib/supabase';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 import { formatDate, getDeptColor, isVisaExpiringSoon, tenureYears } from '@/lib/utils';
 import Link from 'next/link';
 import Avatar from '@/components/Avatar';
 import HrChat from '@/components/HrChat';
 
-export const revalidate = 60;
+export const revalidate = 0;
+
+async function getLoggedInName(): Promise<string | null> {
+  try {
+    const cookieStore = await cookies();
+    const serverSupabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { getAll: () => cookieStore.getAll() } },
+    );
+    const { data: { user } } = await serverSupabase.auth.getUser();
+    if (!user?.email) return null;
+    return user.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+  } catch { return null; }
+}
 
 function getNextBirthday(birthdayStr: string): Date {
   const bd  = new Date(birthdayStr + 'T00:00:00');
@@ -61,7 +77,8 @@ async function getStats() {
 }
 
 export default async function DashboardPage() {
-  const { all, inactive, india, uscan, newJoin, visaAlerts, deptCounts, recentJoiners, upcomingBirthdays } = await getStats();
+  const [{ all, inactive, india, uscan, newJoin, visaAlerts, deptCounts, recentJoiners, upcomingBirthdays }, loggedInName] =
+    await Promise.all([getStats(), getLoggedInName()]);
 
   const stats = [
     { label: 'Active Headcount',  value: all.length,         color: '#1e88e5', href: '/dossier?status=Active'      },
@@ -78,11 +95,26 @@ export default async function DashboardPage() {
   return (
     <div className="p-8">
       {/* Welcome */}
-      <div className="mb-6 bg-gradient-to-r from-[#0f1e3d] to-[#1a3a6b] rounded-2xl p-6 text-white">
-        <h1 className="text-2xl font-bold mb-1">👋 Welcome back</h1>
-        <p className="text-white/70 text-sm">
-          Simpliigence HR Portal · {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-        </p>
+      <div className="mb-6 bg-gradient-to-r from-[#0f1e3d] to-[#1a3a6b] rounded-2xl p-6 text-white flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold mb-1">
+            👋 Welcome back{loggedInName ? `, ${loggedInName}` : ''}
+          </h1>
+          <p className="text-white/70 text-sm">
+            Simpliigence HR Portal · {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
+        </div>
+        {loggedInName && (
+          <div className="hidden sm:flex items-center gap-2 bg-white/10 rounded-xl px-4 py-2">
+            <div className="w-8 h-8 rounded-full bg-blue-400 flex items-center justify-center text-sm font-bold">
+              {loggedInName.split(' ').map((p: string) => p[0]).join('').slice(0,2)}
+            </div>
+            <div>
+              <div className="text-sm font-semibold leading-tight">{loggedInName}</div>
+              <div className="text-xs text-white/60">HR Admin</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Today's birthday banner */}

@@ -44,9 +44,19 @@ export default function Sidebar() {
     router.push('/login');
   }
 
-  const initials = userEmail
-    ? userEmail.split('@')[0].split('.').map((p: string) => p[0]?.toUpperCase() ?? '').join('').slice(0, 2)
+  // Derive display name from email: sudha@simpliigence.com → Sudha
+  const displayName = userEmail
+    ? userEmail.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+    : null;
+  const initials = displayName
+    ? displayName.split(' ').map((p: string) => p[0]?.toUpperCase() ?? '').join('').slice(0, 2)
     : '?';
+
+  // Pick a consistent avatar colour based on email
+  const avatarColours = ['bg-blue-500','bg-violet-500','bg-emerald-500','bg-rose-500','bg-amber-500'];
+  const avatarColour  = userEmail
+    ? avatarColours[userEmail.charCodeAt(0) % avatarColours.length]
+    : 'bg-blue-500';
 
   return (
     <aside className="w-60 min-h-screen bg-[#0f1e3d] text-white flex flex-col shrink-0">
@@ -61,8 +71,22 @@ export default function Sidebar() {
         </div>
       </div>
 
+      {/* Logged-in user card */}
+      {userEmail && (
+        <div className="mx-3 mt-3 mb-1 rounded-xl bg-white/8 border border-white/10 px-3 py-2.5 flex items-center gap-3">
+          <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0', avatarColour)}>
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-white leading-tight truncate">{displayName}</div>
+            <div className="text-[11px] text-white/50 truncate">{userEmail}</div>
+          </div>
+          <div className="w-2 h-2 rounded-full bg-green-400 shrink-0" title="Online" />
+        </div>
+      )}
+
       {/* Nav */}
-      <nav className="flex-1 p-3 space-y-0.5">
+      <nav className="flex-1 p-3 space-y-0.5 mt-1">
         {NAV.map(({ href, label, icon }) => {
           const active = path === href || (href !== '/' && path.startsWith(href));
           return (
@@ -83,18 +107,8 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* User + Sign out */}
+      {/* Sign out */}
       <div className="p-3 border-t border-white/10">
-        {userEmail && (
-          <div className="flex items-center gap-3 px-3 py-2 mb-1">
-            <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center text-xs font-bold shrink-0">
-              {initials}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs text-white/80 truncate">{userEmail}</div>
-            </div>
-          </div>
-        )}
         <button
           onClick={signOut}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-white/60 hover:bg-white/10 hover:text-white transition-colors"
