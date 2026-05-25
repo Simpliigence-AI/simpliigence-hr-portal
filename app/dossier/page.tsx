@@ -233,25 +233,42 @@ export default function DossierPage() {
 
   if (loading) return <div className="p-8 text-gray-400 text-sm">Loading employees…</div>;
 
-  const activeCount     = employees.filter(e => !e.termination_date && (e.status ?? '') !== 'Ex-Employee').length;
-  const exCount         = employees.filter(e => e.termination_date || e.status === 'Ex-Employee').length;
-  const contractorCount = employees.filter(e => e.type === 'Contractor' || e.status === 'Contractor').length;
+  // ── Counts for chips ───────────────────────────────────────────
+  const isContractor = (e: Employee) => (e as never as {type:string}).type === 'Contractor' || e.status === 'Contractor';
+  const isEx         = (e: Employee) => !!(e as never as {termination_date:string|null}).termination_date || e.status === 'Ex-Employee';
+  const isActiveFTE  = (e: Employee) => !isEx(e) && !isContractor(e);
+
+  const counts = {
+    all:         employees.length,
+    activeFTE:   employees.filter(isActiveFTE).length,
+    contractor:  employees.filter(isContractor).length,
+    exEmployee:  employees.filter(isEx).length,
+    india:       employees.filter(e => e.region === 'India').length,
+    usa:         employees.filter(e => e.region === 'USA').length,
+    canada:      employees.filter(e => e.region === 'Canada').length,
+  };
+
+  const STATUS_CHIPS = [
+    { label: 'All',          value: 'All',          color: 'bg-gray-800 text-white',           inactive: 'bg-white text-gray-600 border-gray-200', count: counts.all },
+    { label: 'Active FTEs',  value: 'Active',        color: 'bg-green-600 text-white',          inactive: 'bg-white text-green-700 border-green-200', count: counts.activeFTE },
+    { label: 'Contractors',  value: 'Contractor',    color: 'bg-orange-500 text-white',         inactive: 'bg-white text-orange-600 border-orange-200', count: counts.contractor },
+    { label: 'Ex-Employees', value: 'Ex-Employee',   color: 'bg-red-500 text-white',            inactive: 'bg-white text-red-600 border-red-200', count: counts.exEmployee },
+  ];
+
+  const REGION_CHIPS = [
+    { label: 'All Regions', value: 'All',    flag: '🌍', count: counts.all },
+    { label: 'India',       value: 'India',  flag: '🇮🇳', count: counts.india },
+    { label: 'USA',         value: 'USA',    flag: '🇺🇸', count: counts.usa },
+    ...(counts.canada > 0 ? [{ label: 'Canada', value: 'Canada', flag: '🇨🇦', count: counts.canada }] : []),
+  ];
 
   return (
     <div className="p-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">HR Dossier</h1>
-          <div className="flex gap-3 mt-1 text-xs text-gray-500">
-            <span className="text-green-600 font-semibold">{activeCount} Active</span>
-            <span>·</span>
-            <span className="text-red-500 font-semibold">{exCount} Ex-Employee</span>
-            <span>·</span>
-            <span className="text-orange-500 font-semibold">{contractorCount} Contractor</span>
-            <span>·</span>
-            <span>{filtered.length} shown</span>
-          </div>
+          <p className="text-xs text-gray-400 mt-0.5">{filtered.length} of {employees.length} employees shown</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setView('grid')} className={cn('px-3 py-1.5 text-sm rounded-lg border', view==='grid' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-600')}>Grid</button>
@@ -259,20 +276,52 @@ export default function DossierPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-6">
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍  Search name, role, location…"
-          className="flex-1 min-w-48 px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
-        {[
-          { v: deptF,   set: setDeptF,   opts: ['All',...DEPTS] },
-          { v: regionF, set: setRegionF, opts: ['All','India','USA'] },
-          { v: statusF, set: setStatusF, opts: ['All','Active','Ex-Employee','Contractor'] },
-        ].map((f,i) => (
-          <select key={i} value={f.v} onChange={e => f.set(e.target.value)}
+      {/* Quick filters */}
+      <div className="space-y-3 mb-5">
+        {/* Status chips */}
+        <div className="flex flex-wrap gap-2">
+          {STATUS_CHIPS.map(chip => (
+            <button key={chip.value} onClick={() => setStatusF(chip.value)}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all',
+                statusF === chip.value ? chip.color + ' border-transparent shadow-sm' : chip.inactive)}>
+              {chip.label}
+              <span className={cn('text-xs px-1.5 py-0.5 rounded-full font-bold',
+                statusF === chip.value ? 'bg-white/25' : 'bg-gray-100 text-gray-500')}>
+                {chip.count}
+              </span>
+            </button>
+          ))}
+        </div>
+        {/* Region chips */}
+        <div className="flex flex-wrap gap-2">
+          {REGION_CHIPS.map(chip => (
+            <button key={chip.value} onClick={() => setRegionF(chip.value)}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all',
+                regionF === chip.value
+                  ? 'bg-blue-600 text-white border-transparent shadow-sm'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300')}>
+              <span>{chip.flag}</span>
+              {chip.label}
+              <span className={cn('text-xs px-1.5 py-0.5 rounded-full font-bold',
+                regionF === chip.value ? 'bg-white/25' : 'bg-gray-100 text-gray-500')}>
+                {chip.count}
+              </span>
+            </button>
+          ))}
+        </div>
+        {/* Search + dept */}
+        <div className="flex flex-wrap gap-3">
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍  Search name, role, location…"
+            className="flex-1 min-w-48 px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+          <select value={deptF} onChange={e => setDeptF(e.target.value)}
             className="px-3 py-2 text-sm border rounded-lg bg-white focus:ring-2 focus:ring-blue-400">
-            {f.opts.map(o => <option key={o}>{o}</option>)}
+            {['All', ...DEPTS].map(o => <option key={o}>{o === 'All' ? 'All Departments' : o}</option>)}
           </select>
-        ))}
+          {(search || deptF !== 'All' || statusF !== 'All' || regionF !== 'All') && (
+            <button onClick={() => { setSearch(''); setDeptF('All'); setStatusF('All'); setRegionF('All'); }}
+              className="px-3 py-2 text-sm text-blue-600 hover:underline">Clear all</button>
+          )}
+        </div>
       </div>
 
       {/* Grid */}
@@ -280,14 +329,20 @@ export default function DossierPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {filtered.map(e => {
             const { label, cls } = statusBadge(e as never);
+            const isC = isContractor(e);
+            const isE = isEx(e);
+            const regionFlag = e.region === 'India' ? '🇮🇳' : e.region === 'USA' ? '🇺🇸' : e.region === 'Canada' ? '🇨🇦' : '';
             return (
               <div key={e.id} onClick={() => openProfile(e)}
                 className={cn('bg-white rounded-xl shadow-sm border p-4 cursor-pointer hover:shadow-md transition-all',
-                  label === 'Ex-Employee' ? 'opacity-60 border-red-100' : 'border-gray-100 hover:border-blue-200')}>
+                  isE  ? 'opacity-55 border-red-200 bg-red-50/30' :
+                  isC  ? 'border-orange-300 bg-orange-50/30 hover:border-orange-400' :
+                         'border-gray-100 hover:border-blue-200')}>
                 <div className="flex flex-col items-center text-center gap-2">
                   <div className="relative">
                     <Avatar name={e.name} photoUrl={e.photo_url} size="lg" />
-                    {label === 'Ex-Employee' && <div className="absolute inset-0 rounded-full bg-red-500/20 flex items-center justify-center"><span className="text-xs text-red-600 font-bold">EX</span></div>}
+                    {isE && <div className="absolute inset-0 rounded-full bg-red-500/20 flex items-center justify-center"><span className="text-xs text-red-600 font-bold">EX</span></div>}
+                    {isC && !isE && <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center border-2 border-white"><span className="text-white text-[9px] font-black">C</span></div>}
                   </div>
                   <div>
                     <div className="font-semibold text-sm leading-tight">{e.name}</div>
@@ -297,7 +352,10 @@ export default function DossierPage() {
                     <span className="text-xs px-2 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: getDeptColor(e.dept ?? '') }}>{e.dept}</span>
                     <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', cls)}>{label}</span>
                   </div>
-                  <div className="text-xs text-gray-400">{e.location}</div>
+                  <div className="flex items-center gap-1 text-xs text-gray-400">
+                    {regionFlag && <span>{regionFlag}</span>}
+                    <span>{e.location}</span>
+                  </div>
                   <div className="text-xs font-medium text-blue-600">{calcTenure(e.joined, (e as never as {termination_date:string|null}).termination_date)}</div>
                 </div>
               </div>
@@ -312,7 +370,7 @@ export default function DossierPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                {['Employee','Role','Department','Location','Manager','Status','Joined','Tenure','BGV'].map(h => (
+                {['Employee','Role','Department','Region','Manager','Type','Status','Tenure'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
@@ -320,22 +378,36 @@ export default function DossierPage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.map(e => {
                 const { label, cls } = statusBadge(e as never);
+                const isC = isContractor(e);
+                const regionFlag = e.region === 'India' ? '🇮🇳' : e.region === 'USA' ? '🇺🇸' : e.region === 'Canada' ? '🇨🇦' : '';
                 return (
-                  <tr key={e.id} onClick={() => openProfile(e)} className="hover:bg-blue-50 cursor-pointer transition-colors">
+                  <tr key={e.id} onClick={() => openProfile(e)}
+                    className={cn('cursor-pointer transition-colors',
+                      isC ? 'bg-orange-50/40 hover:bg-orange-50' : 'hover:bg-blue-50')}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <Avatar name={e.name} photoUrl={e.photo_url} size="sm" />
+                        <div className="relative shrink-0">
+                          <Avatar name={e.name} photoUrl={e.photo_url} size="sm" />
+                          {isC && <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center border border-white"><span className="text-white text-[8px] font-black">C</span></div>}
+                        </div>
                         <span className="font-medium">{e.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{e.role}</td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">{e.role}</td>
                     <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: getDeptColor(e.dept ?? '') }}>{e.dept}</span></td>
-                    <td className="px-4 py-3 text-gray-600">{e.location}</td>
-                    <td className="px-4 py-3 text-gray-600">{e.manager ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm">
+                      <span>{regionFlag} </span>
+                      <span className="text-gray-600 text-xs">{e.location}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">{e.manager ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium',
+                        isC ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700')}>
+                        {isC ? 'Contractor' : 'FTE'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3"><span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', cls)}>{label}</span></td>
-                    <td className="px-4 py-3 text-gray-600">{formatDate(e.joined)}</td>
-                    <td className="px-4 py-3 text-blue-600 font-medium">{calcTenure(e.joined, (e as never as {termination_date:string|null}).termination_date)}</td>
-                    <td className="px-4 py-3"><span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', e.bgv === 'Verified' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')}>{e.bgv}</span></td>
+                    <td className="px-4 py-3 text-blue-600 font-medium text-xs">{calcTenure(e.joined, (e as never as {termination_date:string|null}).termination_date)}</td>
                   </tr>
                 );
               })}
