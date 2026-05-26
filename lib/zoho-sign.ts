@@ -67,6 +67,7 @@ function buildMultipartBody(
   const CRLF     = '\r\n';
 
   const parts: Buffer[] = [
+    // ── PDF file part ──────────────────────────────────────────────────────
     Buffer.from(
       `--${boundary}${CRLF}` +
       `Content-Disposition: form-data; name="file"; filename="${fileName}"${CRLF}` +
@@ -74,6 +75,8 @@ function buildMultipartBody(
     ),
     pdfBytes,
     Buffer.from(CRLF),
+
+    // ── JSON data part ─────────────────────────────────────────────────────
     Buffer.from(
       `--${boundary}${CRLF}` +
       `Content-Disposition: form-data; name="data"${CRLF}` +
@@ -81,6 +84,8 @@ function buildMultipartBody(
       requestDataJson +
       CRLF,
     ),
+
+    // ── Closing boundary ───────────────────────────────────────────────────
     Buffer.from(`--${boundary}--${CRLF}`),
   ];
 
@@ -90,6 +95,9 @@ function buildMultipartBody(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Send a document (PDF bytes) for e-signature
+// ---------------------------------------------------------------------------
 export interface SignerInfo {
   name:  string;
   email: string;
@@ -132,6 +140,7 @@ export async function sendDocumentForSignature(
     JSON.stringify(requestData),
   );
 
+  // ── Step 1: Create the request (lands in DRAFT state) ───────────────────
   let res: Response;
   try {
     res = await fetch(`${SIGN_API}/requests`, {
@@ -143,7 +152,7 @@ export async function sendDocumentForSignature(
       body,
     });
   } catch (err) {
-    throw new Error(`Sign API network error (sign.zoho.in unreachable?): ${(err as Error).message}`);
+    throw new Error(`Sign API network error: ${(err as Error).message}`);
   }
 
   let json: Record<string, unknown>;
@@ -154,19 +163,51 @@ export async function sendDocumentForSignature(
   }
 
   if (json.status !== 'success') {
-    throw new Error(`Zoho Sign API error (HTTP ${res.status}): ${JSON.stringify(json)}`);
+    throw new Error(`Zoho Sign create error (HTTP ${res.status}): ${JSON.stringify(json)}`);
   }
 
   const req = json.requests as Record<string, unknown>;
   const doc = (req.document_ids as Array<Record<string, string>> | undefined)?.[0];
+  const requestId = req.request_id as string;
+
+  // ── Step 2: Submit the request — this sends the signing email ───────────
+  let submitRes: Response;
+  try {
+    submitRes = await fetch(`${SIGN_API}/requests/${requestId}/submit`, {
+      method:  'POST',
+      headers: {
+        Authorization:  `Zoho-oauthtoken ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+  } catch (err) {
+    throw new Error(`Sign API submit network error: ${(err as Error).message}`);
+  }
+
+  let submitJson: Record<string, unknown>;
+  try {
+    submitJson = await submitRes.json();
+  } catch {
+    throw new Error(`Sign API submit non-JSON response (HTTP ${submitRes.status})`);
+  }
+
+  if (submitJson.status !== 'success') {
+    throw new Error(`Zoho Sign submit error (HTTP ${submitRes.status}): ${JSON.stringify(submitJson)}`);
+  }
+
+  const submittedReq = submitJson.requests as Record<string, unknown>;
 
   return {
-    requestId:  req.request_id as string,
+    requestId,
     documentId: doc?.document_id ?? '',
-    signingUrl: (req.actions as Array<Record<string, string>> | undefined)?.[0]?.signing_url,
+    signingUrl: (submittedReq?.actions as Array<Record<string, string>> | undefined)?.[0]?.signing_url,
   };
 }
 
+// ---------------------------------------------------------------------------
+// Get signing status of a request
+// ---------------------------------------------------------------------------
 export type ZohoSignStatus = 'inprogress' | 'completed' | 'declined' | 'expired' | 'recalled';
 
 export async function getSigningStatus(requestId: string): Promise<ZohoSignStatus> {
