@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import type { Employee } from '@/lib/database.types';
 import { formatDate, getDeptColor, cn } from '@/lib/utils';
 import Avatar from '@/components/Avatar';
+import DocumentsPanel from '@/components/DocumentsPanel';
 
 // ─── Constants ───────────────────────────────────────────────
 const DEPTS     = ['Delivery','HR','Finance','Sales','Marketing','Operations','Talent Mgmt','Leadership'];
@@ -109,6 +110,10 @@ function DossierInner() {
   const [colPickerOpen, setColPickerOpen] = useState(false);
   const [rowDrafts,     setRowDrafts]     = useState<Record<string, Record<string, unknown>>>({});
   const [rowSaving,     setRowSaving]     = useState<Record<string, boolean>>({});
+  const [showNewEmp,    setShowNewEmp]    = useState(false);
+  const [newEmpForm,    setNewEmpForm]    = useState<Record<string, string>>({});
+  const [newEmpSaving,  setNewEmpSaving]  = useState(false);
+  const [newEmpError,   setNewEmpError]   = useState('');
   const photoRef = useRef<HTMLInputElement>(null);
   const docRef   = useRef<HTMLInputElement>(null);
 
@@ -270,6 +275,73 @@ function DossierInner() {
   const F = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setEditForm(f => ({ ...f, [key]: e.target.value || null }));
 
+  // ── New employee creation ─────────────────────────────────────
+  async function openNewEmpModal() {
+    // Auto-generate next SPL-XXX id
+    const nums = employees
+      .map(e => { const m = e.id.match(/SPL-0*(\d+)/i); return m ? parseInt(m[1]) : 0; })
+      .filter(n => n > 0);
+    const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+    const nextId  = `SPL-${String(nextNum).padStart(3, '0')}`;
+    setNewEmpForm({
+      id: nextId, name: '', role: '', dept: DEPTS[0], location: '',
+      region: 'India', manager: '', wfo: 'WFH', status: 'Active',
+      type: 'FTE', joined: new Date().toISOString().slice(0, 10),
+      phone: '', visa: '', skills: '', bgv: 'Pending',
+    });
+    setNewEmpError('');
+    setShowNewEmp(true);
+  }
+
+  async function createEmployee() {
+    setNewEmpError('');
+    const missing: string[] = [];
+    if (!newEmpForm.name?.trim())     missing.push('Full Name');
+    if (!newEmpForm.role?.trim())     missing.push('Role / Title');
+    if (!newEmpForm.dept?.trim())     missing.push('Department');
+    if (!newEmpForm.location?.trim()) missing.push('Location');
+    if (!newEmpForm.manager?.trim())  missing.push('Manager');
+    if (missing.length) { setNewEmpError(`Required: ${missing.join(', ')}`); return; }
+
+    // Check ID not already taken
+    if (employees.some(e => e.id === newEmpForm.id)) {
+      setNewEmpError(`Employee ID ${newEmpForm.id} already exists. Change it.`); return;
+    }
+
+    setNewEmpSaving(true);
+    const payload = {
+      id:       newEmpForm.id,
+      name:     newEmpForm.name.trim(),
+      role:     newEmpForm.role.trim(),
+      dept:     newEmpForm.dept,
+      location: newEmpForm.location.trim(),
+      region:   newEmpForm.region,
+      manager:  newEmpForm.manager.trim(),
+      wfo:      newEmpForm.wfo,
+      status:   newEmpForm.status,
+      type:     newEmpForm.type,
+      joined:   newEmpForm.joined || null,
+      phone:    newEmpForm.phone || null,
+      visa:     newEmpForm.visa || null,
+      bgv:      newEmpForm.bgv || null,
+      active:   newEmpForm.status !== 'Ex-Employee',
+      skills:   newEmpForm.skills ? newEmpForm.skills.split(',').map(s => s.trim()).filter(Boolean) : [],
+    };
+    const { data, error } = await supabase.from('employees').insert(payload).select().single();
+    if (error) { setNewEmpError(`Save failed: ${error.message}`); setNewEmpSaving(false); return; }
+    if (data) {
+      setEmployees(es => [...es, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setShowNewEmp(false);
+      // Open the new employee's profile immediately
+      setSelected(data);
+      setModalTab('Profile');
+    }
+    setNewEmpSaving(false);
+  }
+
+  const NF = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setNewEmpForm(f => ({ ...f, [key]: e.target.value }));
+
   // ── Column visibility ─────────────────────────────────────────
   const isColVisible = (key: string) => {
     const col = COL_DEFS.find(c => c.key === key);
@@ -421,6 +493,10 @@ function DossierInner() {
           <p className="text-xs text-gray-400 mt-0.5">{filtered.length} of {employees.length} employees shown</p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={openNewEmpModal}
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
+            ＋ Add Employee
+          </button>
           {view === 'list' && (
             <div className="relative">
               <button onClick={() => setColPickerOpen(p => !p)}
@@ -637,6 +713,168 @@ function DossierInner() {
           {filtered.length === 0 && (
             <div className="text-center text-gray-400 text-sm py-12">No employees match the current filters.</div>
           )}
+        </div>
+      )}
+
+      {/* ── NEW EMPLOYEE MODAL ── */}
+      {showNewEmp && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowNewEmp(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="p-5 border-b flex items-center justify-between shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">➕ Add New Employee</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Fields marked <span className="text-red-500">*</span> are required</p>
+              </div>
+              <button onClick={() => setShowNewEmp(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+
+            {/* Body */}
+            <div className="overflow-auto flex-1 p-6 space-y-5">
+              {newEmpError && (
+                <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">⚠️ {newEmpError}</div>
+              )}
+
+              {/* Identity */}
+              <div>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Identity</h3>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Employee ID</label>
+                    <input value={newEmpForm.id ?? ''} onChange={NF('id')}
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Full Name <span className="text-red-500">*</span></label>
+                    <input value={newEmpForm.name ?? ''} onChange={NF('name')} placeholder="e.g. Priya Sharma"
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Role / Title <span className="text-red-500">*</span></label>
+                    <input value={newEmpForm.role ?? ''} onChange={NF('role')} placeholder="e.g. Salesforce Developer"
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Department <span className="text-red-500">*</span></label>
+                    <select value={newEmpForm.dept ?? DEPTS[0]} onChange={NF('dept')}
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white">
+                      {DEPTS.map(d => <option key={d}>{d}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Location */}
+              <div>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Location & Work</h3>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Location <span className="text-red-500">*</span></label>
+                    <input value={newEmpForm.location ?? ''} onChange={NF('location')} placeholder="e.g. Bangalore"
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Region</label>
+                    <select value={newEmpForm.region ?? 'India'} onChange={NF('region')}
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white">
+                      {['India','USA','Canada'].map(r => <option key={r}>{r}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Work Mode</label>
+                    <select value={newEmpForm.wfo ?? 'WFH'} onChange={NF('wfo')}
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white">
+                      {WFO_OPTS.map(o => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Manager <span className="text-red-500">*</span></label>
+                    <input value={newEmpForm.manager ?? ''} onChange={NF('manager')} placeholder="e.g. Manjunath Tadahal"
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Employment */}
+              <div>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Employment</h3>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Type</label>
+                    <select value={newEmpForm.type ?? 'FTE'} onChange={NF('type')}
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white">
+                      {['FTE','Contractor','Contract'].map(o => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Status</label>
+                    <select value={newEmpForm.status ?? 'Active'} onChange={NF('status')}
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white">
+                      {STATUS_OPTS.map(o => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Join Date</label>
+                    <input type="date" value={newEmpForm.joined ?? ''} onChange={NF('joined')}
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Date of Birth</label>
+                    <input type="date" value={newEmpForm.birthday ?? ''} onChange={NF('birthday')}
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Compliance */}
+              <div>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Compliance & Contact</h3>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">BGV Status</label>
+                    <select value={newEmpForm.bgv ?? 'Pending'} onChange={NF('bgv')}
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white">
+                      {BGV_OPTS.map(o => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Phone</label>
+                    <input value={newEmpForm.phone ?? ''} onChange={NF('phone')} placeholder="+91 98765 43210"
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Visa Type</label>
+                    <input value={newEmpForm.visa ?? ''} onChange={NF('visa')} placeholder="e.g. H1B, L1, GC"
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Visa Expiry</label>
+                    <input type="date" value={newEmpForm.visa_expiry ?? ''} onChange={NF('visa_expiry')}
+                      className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Skills */}
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">Skills <span className="text-gray-400 font-normal">(comma-separated)</span></label>
+                <input value={newEmpForm.skills ?? ''} onChange={NF('skills')} placeholder="e.g. Salesforce, Apex, LWC"
+                  className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400" />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-5 border-t flex gap-3 shrink-0">
+              <button onClick={createEmployee} disabled={newEmpSaving}
+                className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                {newEmpSaving ? '⏳ Creating…' : '✓ Create Employee'}
+              </button>
+              <button onClick={() => setShowNewEmp(false)}
+                className="px-6 py-2.5 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -917,6 +1155,22 @@ function DossierInner() {
                       ))}
                     </div>
                   )}
+
+                  {/* ── HR Letters & e-Signature ── */}
+                  <div className="border-t border-gray-100 pt-5">
+                    <DocumentsPanel employee={{
+                      id:               selected.id,
+                      name:             selected.name,
+                      role:             selected.role ?? '',
+                      dept:             selected.dept ?? '',
+                      location:         selected.location ?? '',
+                      manager:          selected.manager ?? '',
+                      joined:           selected.joined ?? undefined,
+                      salary:           (selected as never as {salary?: number}).salary,
+                      email:            (selected as never as {email?: string}).email,
+                      termination_date: (selected as never as {termination_date?: string}).termination_date,
+                    }} />
+                  </div>
                 </div>
               )}
 
