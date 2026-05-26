@@ -176,10 +176,8 @@ export async function sendDocumentForSignature(
     submitRes = await fetch(`${SIGN_API}/requests/${requestId}/submit`, {
       method:  'POST',
       headers: {
-        Authorization:  `Zoho-oauthtoken ${token}`,
-        'Content-Type': 'application/json',
+        Authorization: `Zoho-oauthtoken ${token}`,
       },
-      body: JSON.stringify({}),
     });
   } catch (err) {
     throw new Error(`Sign API submit network error: ${(err as Error).message}`);
