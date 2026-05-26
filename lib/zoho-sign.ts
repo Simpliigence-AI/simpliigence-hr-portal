@@ -121,20 +121,6 @@ export async function sendDocumentForSignature(
           action_type:      'SIGN',
           signing_order:    1,
           verify_recipient: false,
-          fields: {
-            signature_fields: [
-              {
-                field_type_name: 'Signature',
-                page_no:         1,
-                document_id:     '0',
-                x_coord:         62,
-                y_coord:         680,
-                abs_width:       180,
-                abs_height:      40,
-                is_mandatory:    true,
-              },
-            ],
-          },
         },
       ],
     },
