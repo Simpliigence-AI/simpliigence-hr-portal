@@ -7,6 +7,8 @@ export async function middleware(request: NextRequest) {
 
   // Pass through login page and static assets
   if (pathname.startsWith('/login')) return NextResponse.next();
+    if (pathname.startsWith('/api/zoho-test')) return NextResponse.next();
+    if (pathname.startsWith('/api/employees/')) return NextResponse.next();
 
   let response = NextResponse.next({ request: { headers: request.headers } });
 
