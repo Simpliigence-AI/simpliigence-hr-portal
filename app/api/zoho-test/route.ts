@@ -50,6 +50,17 @@ export async function GET() {
           token,
         );
 
+        // Test main zoho.* domains (zohoapis.* fails DNS on Vercel)
+        checks['sign.zoho.in'] = await testEndpoint(
+                  'https://sign.zoho.in/api/v1/requests?page_context.row_count=1',
+                  token,
+                );
+
+        checks['sign.zoho.com'] = await testEndpoint(
+                  'https://sign.zoho.com/api/v1/requests?page_context.row_count=1',
+                  token,
+                );
+
   const anySignOk = Object.entries(checks)
         .filter(([k]) => k.startsWith('sign.'))
         .some(([, v]) => v.startsWith('ok'));
