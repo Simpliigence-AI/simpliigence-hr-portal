@@ -12,9 +12,9 @@ import DocumentsPanel from '@/components/DocumentsPanel';
 const DEPTS     = ['Delivery','HR','Finance','Sales','Marketing','Operations','Talent Mgmt','Leadership'];
 const WFO_OPTS  = ['WFH','WFO','Hybrid'];
 const BGV_OPTS  = ['Verified','Pending','N/A','I-9'];
-const STATUS_OPTS = ['Active','Ex-Employee','Contractor'];
+const STATUS_OPTS = ['Active','Ex-Employee','Contractor,'Ex-Contractor'']
 const DOC_TYPES = ['Offer Letter','Employment Contract','BGV Report','ID Proof','Visa Document','SOW','NDA','Other'];
-const MODAL_TABS = ['Profile','Documents','Targets','Above & Beyond','Certifications'] as const;
+const MODAL_TABS = ['Profile','Documents','Targets','Above & Beyond','Certifiations'] as const;
 type ModalTab = typeof MODAL_TABS[number];
 
 interface ColDef { key: string; label: string; always?: boolean; def?: boolean; editable?: boolean; type?: string; opts?: string[] }
@@ -66,6 +66,7 @@ function statusBadge(emp: { status?: string; type?: string | null; termination_d
     'Active':       'bg-green-100 text-green-700',
     'Ex-Employee':  'bg-red-100 text-red-700',
     'Contractor':   'bg-orange-100 text-orange-700',
+        'Ex-Contractor':  'bg-purple-100 text-purple-700',
   };
   return { label: status, cls: styles[status] ?? 'bg-gray-100 text-gray-600' };
 }
@@ -180,7 +181,7 @@ function DossierInner() {
 
   // ── Employee classification helpers (must be before filtered) ─
   const isContractor = (e: Employee) => (e as never as {type:string}).type === 'Contractor' || e.status === 'Contractor';
-  const isEx         = (e: Employee) => !!(e as never as {termination_date:string|null}).termination_date || e.status === 'Ex-Employee';
+  const isEx         = (e: Employee) => !!(e as never as {termination_date:string|null}).termination_date || e.status === 'Ex-Employee' || e.status === 'Ex-Contractor';
   const isActiveFTE  = (e: Employee) => !isEx(e) && !isContractor(e);
 
   // ── Filters ──────────────────────────────────────────────────
@@ -324,7 +325,7 @@ function DossierInner() {
       phone:    newEmpForm.phone || null,
       visa:     newEmpForm.visa || null,
       bgv:      newEmpForm.bgv || null,
-      active:   newEmpForm.status !== 'Ex-Employee',
+      active:   newEmpForm.status !== 'Ex-Employee' && newEmpForm.status !== 'Ex-Contractor',
       skills:   newEmpForm.skills ? newEmpForm.skills.split(',').map(s => s.trim()).filter(Boolean) : [],
     };
     const { data, error } = await supabase.from('employees').insert(payload).select().single();
