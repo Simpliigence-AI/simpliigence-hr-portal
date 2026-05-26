@@ -1,6 +1,5 @@
 const TOKEN_URL = 'https://accounts.zoho.in/oauth/v2/token';
-const SIGN_API  = 'https://sign.zohoapis.in/api/v1';
-
+const SIGN_API  = 'https://sign.zoho.in/api/v1';
 // ---------------------------------------------------------------------------
 // Token management
 // ---------------------------------------------------------------------------
