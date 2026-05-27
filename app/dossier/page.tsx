@@ -946,7 +946,7 @@ function DossierInner() {
               {!editing && modalTab === 'Profile' && (
                 <div className="p-6 grid sm:grid-cols-2 gap-6">
                   <Section title="Employment">
-                    <Row label="Employee ID" value={selected.id} />
+                    <Row label="Employee ID" value={(selected as never as {emp_id:string}).emp_id ?? selected.id} />
                     <Row label="Location"    value={selected.location} />
                     <Row label="Region"      value={selected.region} />
                     <Row label="Manager"     value={selected.manager} />
