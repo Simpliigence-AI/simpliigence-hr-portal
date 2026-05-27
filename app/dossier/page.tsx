@@ -267,7 +267,9 @@ function DossierInner() {
       return;
     }
     setSaving(true);
-    const { data } = await supabase.from('employees').update(editForm).eq('id', selected.id).select().single();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { id: _stripId, created_at: _ca, updated_at: _ua, ...updatePayload } = editForm as Employee;
+    const { data } = await supabase.from('employees').update(updatePayload).eq('id', selected.id).select().single()
     if (data) { setEmployees(es => es.map(e => e.id === data.id ? data : e)); setSelected(data); setEditing(false); }
     setSaving(false);
   }
