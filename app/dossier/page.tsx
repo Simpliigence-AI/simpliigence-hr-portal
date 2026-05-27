@@ -1016,6 +1016,7 @@ function DossierInner() {
                     <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">⚠️ {editError}</div>
                   )}
                   <div className="grid sm:grid-cols-2 gap-3">
+                    <EField label="Employee ID"    k="emp_id"           editForm={editForm} F={F} />
                     <EField label="Full Name"      k="name"             editForm={editForm} F={F} />
                     <EField label="Role / Title"   k="role"             editForm={editForm} F={F} required />
                     <EField label="Location"       k="location"         editForm={editForm} F={F} required />
