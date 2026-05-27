@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { defaultCTCRows, inrFmt, inrWords } from '@/lib/letter-templates';
 import type { CTCRow } from '@/lib/letter-templates';
 
@@ -127,8 +127,8 @@ function OfferLetterModal({
   const [variableCtc, setVariableCtc] = useState('0');
   const [rows, setRows] = useState<CTCRow[]>([]);
 
-  // Step 3 — Preview text (editable)
-  const [previewHtml, setPreviewHtml] = useState('');
+  // Step 3 — Preview (editable via ref, not state — avoids cursor-jump on re-render)
+  const editorRef = useRef<HTMLDivElement>(null);
 
   // Step 4 — Signer
   const [signerEmail, setSignerEmail] = useState(employee.email ?? '');
@@ -146,9 +146,12 @@ function OfferLetterModal({
     }
   }, [step, fixedCtc, variableCtc, rows.length]);
 
-  // When step 3 loads, build the HTML preview
+  // When step 3 loads, write HTML into the ref directly — never via state
+  // (setting innerHTML via state causes React to re-render the div, resetting cursor position)
   useEffect(() => {
-    if (step === 3) setPreviewHtml(buildPreviewHtml());
+    if (step === 3 && editorRef.current) {
+      editorRef.current.innerHTML = buildPreviewHtml();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
@@ -394,11 +397,10 @@ function OfferLetterModal({
                   <span className="text-xs text-blue-500 font-medium">✏️ Click text to edit</span>
                 </div>
                 <div
+                  ref={editorRef}
                   contentEditable
                   suppressContentEditableWarning
                   className="p-4 max-h-[380px] overflow-y-auto text-xs outline-none focus:ring-2 focus:ring-blue-200 focus:ring-inset"
-                  dangerouslySetInnerHTML={{ __html: previewHtml }}
-                  onInput={e => setPreviewHtml((e.currentTarget as HTMLDivElement).innerHTML)}
                 />
               </div>
             </>
