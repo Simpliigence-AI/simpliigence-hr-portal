@@ -1060,7 +1060,11 @@ function DossierInner() {
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-500 mb-1 block">Employment Status</label>
-                      <select value={(editForm as never as {status:string}).status ?? 'Active'} onChange={F('status')}
+                      <select value={(editForm as never as {status:string}).status ?? 'Active'} onChange={e => {
+                          const s = e.target.value;
+                          const autoType = (s === 'Contractor' || s === 'Ex-Contractor') ? 'Contractor' : 'FTE';
+                          setEditForm(f => ({ ...f, status: s, type: autoType }));
+                        }}
                         className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400">
                         {STATUS_OPTS.map(o => <option key={o}>{o}</option>)}
                       </select>
