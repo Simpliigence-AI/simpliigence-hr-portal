@@ -39,6 +39,7 @@ export interface Database {
 
 export interface Employee {
   id: string;
+  emp_id: string | null;
   name: string;
   initials: string | null;
   role: string | null;
