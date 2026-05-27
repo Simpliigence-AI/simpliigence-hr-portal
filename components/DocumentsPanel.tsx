@@ -391,11 +391,14 @@ function OfferLetterModal({
               <div className="border border-gray-200 rounded-xl overflow-hidden">
                 <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex items-center justify-between">
                   <span className="text-xs font-medium text-gray-600">Contract Preview</span>
-                  <span className="text-xs text-gray-400">Scroll to review</span>
+                  <span className="text-xs text-blue-500 font-medium">✏️ Click text to edit</span>
                 </div>
                 <div
-                  className="p-4 max-h-[380px] overflow-y-auto text-xs"
+                  contentEditable
+                  suppressContentEditableWarning
+                  className="p-4 max-h-[380px] overflow-y-auto text-xs outline-none focus:ring-2 focus:ring-blue-200 focus:ring-inset"
                   dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  onInput={e => setPreviewHtml((e.currentTarget as HTMLDivElement).innerHTML)}
                 />
               </div>
             </>
