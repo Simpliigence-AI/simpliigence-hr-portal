@@ -151,11 +151,24 @@ export default function ActionsPage() {
     const path = `${selected.id}/${Date.now()}-${file.name}`;
     const { error } = await supabase.storage.from('action-attachments').upload(path, file);
     if (!error) {
-      const { data: { publicUrl } } = supabase.storage.from('action-attachments').getPublicUrl(path);
-      const { data } = await supabase.from('action_attachments').insert({ action_id: selected.id, name: file.name, url: publicUrl }).select().single();
+      const { data } = await supabase.from('action_attachments').insert({ action_id: selected.id, name: file.name, url: path }).select().single();
       if (data) setAttachments(a => [...a, data as ActionAttachment]);
     }
     setUploading(false);
+  }
+
+  async function openAttachment(att: ActionAttachment) {
+    const stored = att.url ?? att.sharepoint_url;
+    if (!stored) return;
+    let storagePath = stored;
+    if (stored.startsWith('http')) {
+      const m = stored.match(/action-attachments\/(.+)/);
+      storagePath = m ? m[1] : '';
+    }
+    if (!storagePath) { window.open(stored, '_blank'); return; }
+    const { data, error } = await supabase.storage.from('action-attachments').createSignedUrl(storagePath, 3600);
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+    else alert('Could not open attachment: ' + (error?.message ?? 'unknown error'));
   }
 
   async function deleteAction(id: string) {
@@ -341,8 +354,8 @@ export default function ActionsPage() {
                       <div key={att.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 mb-1.5 text-sm">
                         <span>📎</span>
                         <span className="flex-1 truncate">{att.name}</span>
-                        <a href={att.url ?? att.sharepoint_url ?? '#'} target="_blank" rel="noreferrer"
-                          className="text-xs text-blue-600 hover:underline shrink-0">Open ↗</a>
+                        <button onClick={() => openAttachment(att)}
+                          className="text-xs text-blue-600 hover:underline shrink-0">Open ↗</button>
                       </div>
                     ))
                   }
