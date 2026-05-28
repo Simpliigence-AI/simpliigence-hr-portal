@@ -287,7 +287,7 @@ function DossierInner() {
     const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
     const nextId  = `SPL-${String(nextNum).padStart(3, '0')}`;
     setNewEmpForm({
-      id: nextId, name: '', role: '', dept: DEPTS[0], location: '',
+      id: nextId, emp_id: '', name: '', role: '', dept: DEPTS[0], location: '',
       region: 'India', manager: '', wfo: 'WFH', status: 'Active',
       type: 'FTE', joined: new Date().toISOString().slice(0, 10),
       phone: '', visa: '', skills: '', bgv: 'Pending',
@@ -314,6 +314,7 @@ function DossierInner() {
     setNewEmpSaving(true);
     const payload = {
       id:       newEmpForm.id,
+      emp_id:   newEmpForm.emp_id || null,
       name:     newEmpForm.name.trim(),
       role:     newEmpForm.role.trim(),
       dept:     newEmpForm.dept,
@@ -743,8 +744,13 @@ function DossierInner() {
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Identity</h3>
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Employee ID</label>
-                    <input value={newEmpForm.id ?? ''} onChange={NF('id')}
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">System ID <span className="text-gray-400 font-normal">(auto)</span></label>
+                    <input value={newEmpForm.id ?? ''} readOnly
+                      className="w-full px-3 py-2 text-sm border rounded-lg bg-gray-50 text-gray-500 font-mono cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Display ID <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input value={newEmpForm.emp_id ?? ''} onChange={NF('emp_id')} placeholder="Custom ID (leave blank to auto-assign)"
                       className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 font-mono" />
                   </div>
                   <div>
