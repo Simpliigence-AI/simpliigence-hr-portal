@@ -14,7 +14,7 @@ const WFO_OPTS  = ['WFH','WFO','Hybrid'];
 const BGV_OPTS  = ['Verified','Pending','N/A','I-9'];
 const STATUS_OPTS = ['Active','Ex-Employee','Contractor','Ex-Contractor'];
 const DOC_TYPES = ['Offer Letter','Employment Contract','BGV Report','ID Proof','Visa Document','SOW','NDA','Other'];
-const MODAL_TABS = ['Profile','Documents','Targets','Above & Beyond','Certifiations'] as const;
+const MODAL_TABS = ['Profile','Documents','Targets','Above & Beyond','Certifications'] as const;
 type ModalTab = typeof MODAL_TABS[number];
 
 interface ColDef { key: string; label: string; always?: boolean; def?: boolean; editable?: boolean; type?: string; opts?: string[] }
