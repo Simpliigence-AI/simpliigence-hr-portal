@@ -158,8 +158,9 @@ export default function OrgChartPage() {
   useEffect(() => {
     supabase
       .from('employees')
-      .select('id,name,role,dept,manager,region,active,location,type')
+      .select('id,name,role,dept,manager,region,active,location,type,status')
       .eq('active', true)
+        .in('status', ['Active', 'Contractor'])
       .then(({ data }) => {
         const employees = (data ?? []) as Employee[];
         setTree(buildTree(employees));
