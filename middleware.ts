@@ -1,52 +1,72 @@
-import { createServerClient } from '@supabase/ssr';
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+// Paths managers are allowed to visit — everything else redirects to /performance
+const MANAGER_ALLOWED = ['/performance']
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // Pass through login page and static assets
-  if (pathname.startsWith('/login')) return NextResponse.next();
-    if (pathname.startsWith('/api/zoho-test')) return NextResponse.next();
-    if (pathname.startsWith('/api/employees/')) return NextResponse.next();
-
-  let response = NextResponse.next({ request: { headers: request.headers } });
+  let response = NextResponse.next({
+    request: { headers: request.headers },
+  })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name) {
-          return request.cookies.get(name)?.value;
+        getAll() {
+          return request.cookies.getAll()
         },
-        set(name, value, options) {
-          request.cookies.set({ name, value, ...options });
-          response = NextResponse.next({ request: { headers: request.headers } });
-          response.cookies.set({ name, value, ...options });
-        },
-        remove(name, options) {
-          request.cookies.set({ name, value: '', ...options });
-          response = NextResponse.next({ request: { headers: request.headers } });
-          response.cookies.set({ name, value: '', ...options });
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          )
+          response = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          )
         },
       },
     }
-  );
+  )
 
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await supabase.auth.getSession()
+  const { pathname } = request.nextUrl
 
-  if (!session) {
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('next', pathname);
-    return NextResponse.redirect(loginUrl);
+  // Redirect unauthenticated users to login
+  if (!session && pathname !== '/login') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
   }
 
-  return response;
+  // Role-based routing: managers may only visit /performance (and /api/ routes)
+  if (session && pathname !== '/login' && !pathname.startsWith('/api/')) {
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+
+    const role = roleData?.role ?? 'admin'
+
+    if (role === 'manager') {
+      const allowed = MANAGER_ALLOWED.some(
+        p => pathname === p || pathname.startsWith(p + '/')
+      )
+      if (!allowed) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/performance'
+        return NextResponse.redirect(url)
+      }
+    }
+  }
+
+  return response
 }
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/zoho-test|api/employees).*)',
   ],
-};
+}
