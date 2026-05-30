@@ -6,6 +6,10 @@ import { useEffect, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { cn } from '@/lib/utils';
 
+const MANAGER_NAV = [
+  { href: '/performance', label: 'Manager Review', icon: '📋' },
+]
+
 const NAV = [
   { href: '/',             label: 'Dashboard',        icon: '⊞' },
   { href: '/dossier',      label: 'HR Dossier',       icon: '👥' },
@@ -24,6 +28,18 @@ const NAV = [
 
 export default function Sidebar() {
   const path   = usePathname();
+
+  const [role, setRole] = useState<'admin' | 'manager'>('admin')
+  useEffect(() => {
+    fetch('/api/my-role')
+      .then(r => r.json())
+      .then(d => setRole(d?.role ?? 'admin'))
+      .catch(() => {})
+  }, [])
+
+  const navItems = role === 'manager'
+    ? MANAGER_NAV
+    : [...NAV, { href: '/admin/users', label: 'User Mgmt', icon: '👥' }]
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
@@ -87,7 +103,7 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 p-3 space-y-0.5 mt-1">
-        {NAV.map(({ href, label, icon }) => {
+        {navItems.map(({ href, label, icon }) => {
           const active = path === href || (href !== '/' && path.startsWith(href));
           return (
             <Link
