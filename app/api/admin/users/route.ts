@@ -82,11 +82,11 @@ export async function POST(req: Request) {
   if (callerRole?.role === 'manager')
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const { email, role } = await req.json()
+  const { email, role, password: customPassword } = await req.json()
   if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
 
   // Create user with a random password — they can reset via "Forgot password"
-  const tempPassword = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2).toUpperCase() + '!1'
+  const tempPassword = customPassword || (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2).toUpperCase() + '!1')
   const { data: newUser, error } = await adminClient.auth.admin.createUser({
     email,
     password: tempPassword,
