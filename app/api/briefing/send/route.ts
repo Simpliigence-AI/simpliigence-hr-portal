@@ -31,7 +31,7 @@ function taskHtml(t: {title:string; status:string; priority:string; due_date:str
 </div>`
 }
 
-function buildHtml(name: string, tasks: {title:string;status:string;priority:string;due_date:string|null;description:string|null}[], today: string) {
+function buildHtml(name: string, tasks: {title:string;status:string;priority:string;due_date:string|null;description:string|null}[], today: string, fromName: string) {
   const first = name.split(' ')[0]
   const high = tasks.filter(t => t.priority === 'High').length
   const badge = high > 0
@@ -42,7 +42,6 @@ function buildHtml(name: string, tasks: {title:string;status:string;priority:str
 <body style="margin:0;padding:0;background:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 16px;">
 <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
-
 <tr><td style="background:#1a1a2e;border-radius:12px 12px 0 0;padding:26px 32px;">
   <table width="100%"><tr>
     <td><div style="font-size:20px;font-weight:700;color:#fff;">Simpliigence</div>
@@ -51,21 +50,19 @@ function buildHtml(name: string, tasks: {title:string;status:string;priority:str
                       <div style="font-size:13px;color:rgba(255,255,255,0.65);margin-top:3px;">${today}</div></td>
   </tr></table>
 </td></tr>
-
 <tr><td style="background:#fff;padding:28px 32px;">
   <div style="font-size:22px;font-weight:700;color:#1a1a2e;margin-bottom:6px;">Good morning, ${first} 👋</div>
-  <div style="font-size:14px;color:#555;line-height:1.6;margin-bottom:20px;">You have <strong>${tasks.length} open action item${tasks.length!==1?'s':''}</strong> today. Let's keep the momentum going.</div>
+  <div style="font-size:14px;color:#555;line-height:1.6;margin-bottom:20px;">You have <strong>${tasks.length} open action item${tasks.length!==1?'s':''}</strong> today.</div>
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
     <div style="font-size:12px;font-weight:700;color:#1a1a2e;text-transform:uppercase;letter-spacing:0.5px;">Your open actions</div>
     ${badge}
   </div>
   ${tasks.map(taskHtml).join('')}
 </td></tr>
-
 <tr><td style="background:#f8f8f8;border-radius:0 0 12px 12px;padding:18px 32px;">
   <table width="100%"><tr>
     <td style="font-size:11px;color:#999;line-height:1.6;">
-      Simpliigence HR Portal · Weekdays at 8:00 AM IST<br>
+      ${fromName} · Simpliigence HR Portal · Weekdays at 8:00 AM IST<br>
       <a href="https://simpliigence-hr-portal.vercel.app/actions" style="color:#185FA5;text-decoration:none;">View all in portal →</a>
     </td>
     <td align="right">
@@ -73,7 +70,6 @@ function buildHtml(name: string, tasks: {title:string;status:string;priority:str
     </td>
   </tr></table>
 </td></tr>
-
 </table></td></tr></table>
 </body></html>`
 }
@@ -89,9 +85,24 @@ export async function GET(req: Request) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
+    // Read Gmail credentials from Supabase settings table
+    const { data: settingsRows } = await supabase
+      .from('settings')
+      .select('key, value')
+      .in('key', ['gmail_user', 'gmail_app_password', 'gmail_from_name'])
+
+    const cfg = Object.fromEntries((settingsRows || []).map((s: {key:string;value:string}) => [s.key, s.value]))
+    const gmailUser = cfg.gmail_user || process.env.GMAIL_USER || ''
+    const gmailPass = cfg.gmail_app_password || process.env.GMAIL_APP_PASSWORD || ''
+    const fromName  = cfg.gmail_from_name  || process.env.GMAIL_FROM_NAME  || 'Simpliigence HR'
+
+    if (!gmailUser || !gmailPass) {
+      return NextResponse.json({ ok: false, error: 'Gmail credentials not configured' }, { status: 500 })
+    }
+
     const transporter = nodemailer.createTransport({
       service: 'gmail',
-      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+      auth: { user: gmailUser, pass: gmailPass },
     })
 
     const today = new Date().toLocaleDateString('en-US', {
@@ -114,10 +125,10 @@ export async function GET(req: Request) {
 
       const to = isPreview ? PREVIEW_EMAIL : r.email
       await transporter.sendMail({
-        from: `"${process.env.GMAIL_FROM_NAME || 'Simpliigence HR'}" <${process.env.GMAIL_USER}>`,
+        from: `"${fromName}" <${gmailUser}>`,
         to,
         subject: `${isPreview ? '[PREVIEW] ' : ''}Your HR action items — ${today}`,
-        html: buildHtml(r.name, tasks, today),
+        html: buildHtml(r.name, tasks, today, fromName),
       })
       results.push(`${r.name}: sent to ${to}`)
     }
