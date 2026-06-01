@@ -80,6 +80,7 @@ export default function ActionsPage() {
   const [showForm,    setShowForm]    = useState(false);
   const [view,       setView]       = useState<'list'|'kanban'>('kanban')
   const [showClosed, setShowClosed] = useState(false)
+  const [empPhotos, setEmpPhotos]   = useState<Record<string,string>>({})
   const [editing,     setEditing]     = useState(false);
   const [form,        setForm]        = useState(emptyForm());
   const [saving,      setSaving]      = useState(false);
@@ -92,7 +93,19 @@ export default function ActionsPage() {
   const [search,      setSearch]      = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { loadActions(); }, []);
+  useEffect(() => { loadActions(); }, [])
+
+  // Fetch employee photos keyed by name
+  useEffect(() => {
+    supabase.from('employees').select('id, name').then(({ data: emps }) => {
+      if (!emps) return
+      const photoMap: Record<string,string> = {}
+      emps.forEach(e => {
+        photoMap[e.name] = `https://cxfkwstpztxhkfknuqtj.supabase.co/storage/v1/object/public/employee-photos/${e.id}/avatar.jpg`
+      })
+      setEmpPhotos(photoMap)
+    })
+  }, []);
 
   async function loadActions() {
     setLoading(true);
@@ -216,7 +229,10 @@ export default function ActionsPage() {
               return (
                 <div key={owner as string} className="flex flex-col w-[280px] shrink-0">
                   <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border mb-3 ${palette[idx]}`}>
-                    <div className={`w-6 h-6 rounded-full ${dots[idx]} flex items-center justify-center text-white text-xs font-bold shrink-0`}>{initials}</div>
+                    {empPhotos[owner as string]
+                      ? <img src={empPhotos[owner as string]} alt={owner as string} className="w-7 h-7 rounded-full object-cover shrink-0 border border-white shadow-sm" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; (e.target as HTMLImageElement).nextElementSibling?.setAttribute('style','display:flex') }} />
+                      : null}
+                    <div className={`w-6 h-6 rounded-full ${dots[idx]} flex items-center justify-center text-white text-xs font-bold shrink-0`} style={{ display: empPhotos[owner as string] ? 'none' : 'flex' }}>{initials}</div>
                     <span className="text-xs font-bold text-gray-700 truncate flex-1">{owner as string}</span>
                     <span className="text-xs text-gray-400 shrink-0">{cols.length}</span>
                   </div>
