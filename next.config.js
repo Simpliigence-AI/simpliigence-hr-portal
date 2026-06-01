@@ -11,6 +11,7 @@ const nextConfig = {
       { protocol: 'https', hostname: 'cxfkwstpztxhkfknuqtj.supabase.co' },
     ],
   },
+  serverExternalPackages: ['nodemailer'],
 };
 
 module.exports = nextConfig;
