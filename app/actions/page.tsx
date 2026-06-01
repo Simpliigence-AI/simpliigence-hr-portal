@@ -455,6 +455,7 @@ export default function ActionsPage() {
         </div>
       )}
     </div>
+    </>
   );
 }
 
@@ -520,6 +521,5 @@ function ActionForm({
         <button onClick={onCancel} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
       </div>
     </div>
-    </>
   );
 }
