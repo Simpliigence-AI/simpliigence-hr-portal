@@ -207,16 +207,18 @@ export default function ActionsPage() {
       {view === 'kanban' && (
         <div className="flex-1 overflow-auto p-5 bg-gray-50 min-h-0">
           <div className="flex gap-4 h-full">
-            {(['Open','In Progress','Done','Cancelled'] as const).filter(s => showClosed || (s !== 'Done' && s !== 'Cancelled')).map(status => {
-              const cols = filtered.filter(a => a.status === status)
-              const hdr: Record<string,string> = { 'Open':'bg-blue-50 border-blue-200','In Progress':'bg-purple-50 border-purple-200','Done':'bg-green-50 border-green-200','Cancelled':'bg-gray-100 border-gray-200' }
-              const dot: Record<string,string> = { 'Open':'bg-blue-500','In Progress':'bg-purple-500','Done':'bg-green-500','Cancelled':'bg-gray-400' }
+            {[...new Set(filtered.map(a => a.owner).filter(Boolean))].sort().map(owner => {
+              const cols = filtered.filter(a => a.owner === owner)
+              const initials = (owner as string).split(' ').slice(0,2).map((w: string) => w[0]).join('').toUpperCase()
+              const palette = ['bg-blue-100 border-blue-200','bg-purple-100 border-purple-200','bg-teal-100 border-teal-200','bg-amber-100 border-amber-200','bg-pink-100 border-pink-200','bg-green-100 border-green-200']
+              const dots = ['bg-blue-500','bg-purple-500','bg-teal-500','bg-amber-500','bg-pink-500','bg-green-500']
+              const idx = (owner as string).charCodeAt(0) % palette.length
               return (
-                <div key={status} className="flex flex-col w-[280px] shrink-0">
-                  <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border mb-3 ${hdr[status]}`}>
-                    <div className={`w-2 h-2 rounded-full ${dot[status]}`} />
-                    <span className="text-xs font-bold text-gray-700">{status}</span>
-                    <span className="ml-auto text-xs text-gray-400">{cols.length}</span>
+                <div key={owner as string} className="flex flex-col w-[280px] shrink-0">
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border mb-3 ${palette[idx]}`}>
+                    <div className={`w-6 h-6 rounded-full ${dots[idx]} flex items-center justify-center text-white text-xs font-bold shrink-0`}>{initials}</div>
+                    <span className="text-xs font-bold text-gray-700 truncate flex-1">{owner as string}</span>
+                    <span className="text-xs text-gray-400 shrink-0">{cols.length}</span>
                   </div>
                   <div className="flex flex-col gap-2 overflow-y-auto">
                     {cols.map(a => (
