@@ -67,6 +67,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/zoho-test|api/employees).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/zoho-test|api/employees|api/briefing).*)',
   ],
 }
