@@ -78,6 +78,8 @@ export default function ActionsPage() {
   const [attachments, setAttachments] = useState<ActionAttachment[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [showForm,    setShowForm]    = useState(false);
+  const [view,       setView]       = useState<'list'|'kanban'>('kanban')
+  const [showClosed, setShowClosed] = useState(false)
   const [editing,     setEditing]     = useState(false);
   const [form,        setForm]        = useState(emptyForm());
   const [saving,      setSaving]      = useState(false);
@@ -178,6 +180,7 @@ export default function ActionsPage() {
   }
 
   const filtered = actions.filter(a => {
+    if (!showClosed && (a.status === 'Done' || a.status === 'Cancelled')) return false;
     if (filterOwner !== 'All' && a.owner !== filterOwner) return false;
     if (filterStatus !== 'All' && a.status !== filterStatus) return false;
     if (filterPri !== 'All' && a.priority !== filterPri) return false;
@@ -189,7 +192,54 @@ export default function ActionsPage() {
   actions.forEach(a => { if (a.status in counts) (counts as Record<string,number>)[a.status]++; });
 
   return (
-    <div className="flex h-[calc(100vh-56px)] overflow-hidden">
+    <>
+      {/* View controls */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b bg-white shrink-0">
+        <div className="flex bg-gray-100 rounded-lg p-0.5">
+          <button onClick={() => setView('list')} className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${view==='list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>☰ List</button>
+          <button onClick={() => setView('kanban')} className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${view==='kanban' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>⊞ Kanban</button>
+        </div>
+        <button onClick={() => setShowClosed(s => !s)} className={`ml-auto px-3 py-1.5 text-xs rounded-lg border font-medium transition-colors ${showClosed ? 'bg-gray-100 text-gray-700 border-gray-300' : 'text-gray-400 border-gray-200 hover:bg-gray-50'}`}>
+          {showClosed ? '✓ Showing closed' : 'Show closed tasks'}
+        </button>
+      </div>
+
+      {view === 'kanban' && (
+        <div className="flex-1 overflow-auto p-5 bg-gray-50 min-h-0">
+          <div className="flex gap-4 h-full">
+            {(['Open','In Progress','Done','Cancelled'] as const).filter(s => showClosed || (s !== 'Done' && s !== 'Cancelled')).map(status => {
+              const cols = filtered.filter(a => a.status === status)
+              const hdr: Record<string,string> = { 'Open':'bg-blue-50 border-blue-200','In Progress':'bg-purple-50 border-purple-200','Done':'bg-green-50 border-green-200','Cancelled':'bg-gray-100 border-gray-200' }
+              const dot: Record<string,string> = { 'Open':'bg-blue-500','In Progress':'bg-purple-500','Done':'bg-green-500','Cancelled':'bg-gray-400' }
+              return (
+                <div key={status} className="flex flex-col w-[280px] shrink-0">
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border mb-3 ${hdr[status]}`}>
+                    <div className={`w-2 h-2 rounded-full ${dot[status]}`} />
+                    <span className="text-xs font-bold text-gray-700">{status}</span>
+                    <span className="ml-auto text-xs text-gray-400">{cols.length}</span>
+                  </div>
+                  <div className="flex flex-col gap-2 overflow-y-auto">
+                    {cols.map(a => (
+                      <div key={a.id} onClick={() => { setSelected(a); setEditing(false); setActivity([]); setAttachments([]); supabase.from('action_activity').select('*').eq('action_id',a.id).order('created_at').then(({data: acts})=>setActivity((acts??[]) as ActionActivity[])); supabase.from('action_attachments').select('*').eq('action_id',a.id).order('created_at').then(({data: atts})=>setAttachments((atts??[]) as ActionAttachment[])); }}
+                        className={`bg-white rounded-xl border p-3 cursor-pointer hover:shadow-md transition-shadow ${selected?.id===a.id?'ring-2 ring-blue-400 border-blue-300':'border-gray-200'}`}>
+                        <div className="text-sm font-medium text-gray-900 leading-snug mb-2">{a.title}</div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${a.priority==='High'?'bg-red-100 text-red-700':a.priority==='Medium'?'bg-amber-100 text-amber-700':'bg-green-100 text-green-700'}`}>{a.priority}</span>
+                          {a.due_date && <span className="text-xs text-gray-400">{new Date(a.due_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>}
+                        </div>
+                        {a.owner && <div className="text-xs text-gray-400 mt-1.5 truncate">{a.owner}</div>}
+                      </div>
+                    ))}
+                    {cols.length===0 && <div className="text-center py-8 text-xs text-gray-300">Empty</div>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="flex h-[calc(100vh-56px)] overflow-hidden" style={{ display: view==='list' ? 'flex' : 'none' }}>
 
       {/* ── Left: list ── */}
       <div className="w-[420px] border-r flex flex-col bg-gray-50 shrink-0">
@@ -470,5 +520,6 @@ function ActionForm({
         <button onClick={onCancel} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
       </div>
     </div>
+    </>
   );
 }
