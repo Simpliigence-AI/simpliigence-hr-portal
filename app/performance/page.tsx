@@ -120,6 +120,23 @@ function emptyForm(): Partial<MonthlyReview> {
 }
 
 // ─── Main Page ────────────────────────────────────────────────
+const DETAILED_QUESTIONS = [
+  { id: 'role_fitment', cat: '1. Technical Performance & Execution', label: 'Role Fitment', opts: ['Development Needed','Developing','Proficient','Advanced'] },
+  { id: 'delivery', cat: '1. Technical Performance & Execution', label: 'Delivery & Commitments', opts: ['Rarely','Sometimes','Consistently','Always'] },
+  { id: 'quality_speed', cat: '1. Technical Performance & Execution', label: 'Quality vs. Speed', opts: ['Struggles to Balance','Inconsistent','Effective Balance','Exceptional Balance'] },
+  { id: 'skill_dev', cat: '1. Technical Performance & Execution', label: 'Skill Development', opts: ['Needs Improvement','Passive Learner','Proactive','Continuous Learner'] },
+  { id: 'ownership', cat: '2. Professional Traits & Mindset', label: 'Ownership', opts: ['Good','Very Good','Excellent'] },
+  { id: 'accountability', cat: '2. Professional Traits & Mindset', label: 'Accountability', opts: ['Good','Very Good','Excellent'] },
+  { id: 'critical_thinking', cat: '2. Professional Traits & Mindset', label: 'Critical Thinking & Solution Proactivity', opts: ['Reactive','Occasionally Proactive','Highly Proactive'] },
+  { id: 'innovation', cat: '2. Professional Traits & Mindset', label: 'Innovation & Going the Extra Mile', opts: ['Meets Expectations Only','Occasionally Steps Up','Consistently Goes the Extra Mile'] },
+  { id: 'autonomy', cat: '3. Leadership & Autonomy', label: 'Autonomy (IC vs. Lead)', opts: ['High Supervision Needed','Moderate Supervision Needed','Independent'] },
+  { id: 'critical_situations', cat: '3. Leadership & Autonomy', label: 'Managing Critical Project Situations', opts: ['Easily Overwhelmed','Stabilizes Gradually','Calm & Effective','Thrives Under Pressure'] },
+  { id: 'client_mgmt', cat: '4. Client Interactions', label: 'Management of Client / Client Calls', opts: ['Needs Intervention','Needs Occasional Support','Independent Management','Trusted Advisor'] },
+  { id: 'professionalism', cat: '4. Client Interactions', label: 'Professionalism in Client Interactions', opts: ['Needs Improvement','Generally Professional','Exemplary Professionalism'] },
+  { id: 'attitude', cat: '5. Teamwork & Culture', label: 'Attitude & Behavior', opts: ['Needs Improvement','Professional','Highly Positive'] },
+  { id: 'teamwork', cat: '5. Teamwork & Culture', label: 'Teamwork & Morale', opts: ['Detrimental','Neutral Participant','Positive Contributor','Culture Champion'] },
+]
+
 export default function PerformancePage() {
   const [employees,    setEmployees]    = useState<Employee[]>([]);
   const [selected,     setSelected]     = useState<Employee | null>(null);
@@ -127,6 +144,8 @@ export default function PerformancePage() {
   const [activeReview, setActiveReview] = useState<MonthlyReview | null>(null);
   const [mode,         setMode]         = useState<'history' | 'form'>('history');
   const [form,         setForm]         = useState<Partial<MonthlyReview>>(emptyForm());
+  const [reviewTemplate, setReviewTemplate] = useState<'standard'|'detailed'>('standard')
+  const [detailedData, setDetailedData]       = useState<Record<string,string>>({})
   const [reviewMonth,  setReviewMonth]  = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
@@ -179,6 +198,8 @@ export default function PerformancePage() {
     if (!selected) return;
     setSaving(true);
     const payload = { ...form, employee_id: selected.id, review_month: reviewMonth, score: calcScore(form) };
+      review_template: reviewTemplate,
+      detailed_data: reviewTemplate === 'detailed' ? detailedData : null,
     let result;
     if (activeReview) {
       ({ data: result } = await supabase.from('monthly_reviews').update(payload).eq('id', activeReview.id).select().single());
@@ -399,6 +420,18 @@ export default function PerformancePage() {
                         onChange={e => setReviewMonth(e.target.value + '-01')}
                         className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white" />
                     </div>
+              {/* Template Selector */}
+              <div className="mb-4 p-3 bg-indigo-50 rounded-xl border border-indigo-100">
+                <div className="text-xs font-semibold text-gray-600 mb-2">Review Template</div>
+                <div className="flex gap-2">
+                  {(['standard','detailed'] as const).map(t => (
+                    <button key={t} onClick={() => setReviewTemplate(t)}
+                      className={`px-3 py-1.5 text-xs rounded-lg font-semibold border transition-colors ${reviewTemplate===t ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                      {t === 'standard' ? '📋 Standard Review' : '🔍 Detailed Review Template'}
+                    </button>
+                  ))}
+                </div>
+              </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-500 mb-1 block">Manager Name</label>
                       <input value={form.manager_name ?? ''} onChange={e => setForm(f => ({ ...f, manager_name: e.target.value }))}
@@ -486,6 +519,30 @@ export default function PerformancePage() {
 
                 <div className="mb-6">
                   <label className="text-xs font-semibold text-gray-500 mb-1 block">Overall Feedback (Strengths / Improvements)</label>
+              {/* Detailed Review Template Questions */}
+              {reviewTemplate === 'detailed' && (() => {
+                const cats = [...new Set(DETAILED_QUESTIONS.map(q => q.cat))]
+                return (
+                  <div className="mb-4 space-y-4 border border-indigo-100 rounded-xl p-4 bg-indigo-50">
+                    <div className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Detailed Review Template</div>
+                    {cats.map(cat => (
+                      <div key={cat}>
+                        <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">{cat}</div>
+                        {DETAILED_QUESTIONS.filter(q => q.cat === cat).map(q => (
+                          <div key={q.id} className="mb-3">
+                            <label className="text-xs font-medium text-gray-700 mb-1 block">{q.label}</label>
+                            <select value={detailedData[q.id] || ''} onChange={e => setDetailedData(d => ({ ...d, [q.id]: e.target.value }))}
+                              className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-indigo-400 bg-white">
+                              <option value="">Select…</option>
+                              {q.opts.map(o => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
                   <textarea rows={4} value={form.overall_feedback ?? ''}
                     onChange={e => setForm(f => ({ ...f, overall_feedback: e.target.value }))}
                     placeholder="Summarise strengths, areas for improvement, and any other notes…"
