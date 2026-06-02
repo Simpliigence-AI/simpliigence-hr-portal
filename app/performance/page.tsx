@@ -136,7 +136,8 @@ export default function PerformancePage() {
   const [search,  setSearch]  = useState('');
 
   useEffect(() => {
-    supabase.from('employees').select('*').eq('active', true).order('name')
+    supabase.from('employees').select('*').eq('active', true)
+      .in('status', ['Active', 'Contractor']).order('name')
       .then(({ data }) => setEmployees(data ?? []));
   }, []);
 
