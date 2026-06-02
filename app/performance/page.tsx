@@ -424,7 +424,7 @@ export default function PerformancePage() {
               <div className="mb-4 p-3 bg-indigo-50 rounded-xl border border-indigo-100">
                 <div className="text-xs font-semibold text-gray-600 mb-2">Review Template</div>
                 <div className="flex gap-2">
-                  {(['standard','detailed'] as const).map(t => (
+                  {(['standard' as const,'detailed' as const]).map(t => (
                     <button key={t} onClick={() => setReviewTemplate(t)}
                       className={`px-3 py-1.5 text-xs rounded-lg font-semibold border transition-colors ${reviewTemplate===t ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
                       {t === 'standard' ? '📋 Standard Review' : '🔍 Detailed Review Template'}
@@ -520,14 +520,12 @@ export default function PerformancePage() {
                 <div className="mb-6">
                   <label className="text-xs font-semibold text-gray-500 mb-1 block">Overall Feedback (Strengths / Improvements)</label>
               {/* Detailed Review Template Questions */}
-              {reviewTemplate === 'detailed' && (() => {
-                const cats = [...new Set(DETAILED_QUESTIONS.map(q => q.cat))]
-                return (
+              {reviewTemplate === 'detailed' && (
                   <div className="mb-4 space-y-4 border border-indigo-100 rounded-xl p-4 bg-indigo-50">
-                    <div className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Detailed Review Template</div>
-                    {cats.map(cat => (
-                      <div key={cat}>
-                        <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">{cat}</div>
+                    <div className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-2">Detailed Review Template</div>
+                    {['1. Technical Performance & Execution','2. Professional Traits & Mindset','3. Leadership & Autonomy','4. Client Interactions','5. Teamwork & Culture'].map(cat => (
+                      <div key={cat} className="mb-4">
+                        <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide border-b border-indigo-100 pb-1">{cat}</div>
                         {DETAILED_QUESTIONS.filter(q => q.cat === cat).map(q => (
                           <div key={q.id} className="mb-3">
                             <label className="text-xs font-medium text-gray-700 mb-1 block">{q.label}</label>
@@ -541,8 +539,7 @@ export default function PerformancePage() {
                       </div>
                     ))}
                   </div>
-                )
-              })()}
+                )}
                   <textarea rows={4} value={form.overall_feedback ?? ''}
                     onChange={e => setForm(f => ({ ...f, overall_feedback: e.target.value }))}
                     placeholder="Summarise strengths, areas for improvement, and any other notes…"
