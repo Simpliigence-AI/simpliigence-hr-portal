@@ -434,6 +434,8 @@ export default function PerformancePage() {
               </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-500 mb-1 block">Manager Name</label>
+              {/* TMPL-TEST */}
+              {'TMPL-MARKER-XYZ'}
                       <input value={form.manager_name ?? ''} onChange={e => setForm(f => ({ ...f, manager_name: e.target.value }))}
                         className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white" />
                     </div>
