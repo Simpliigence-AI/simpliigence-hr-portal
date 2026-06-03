@@ -14,6 +14,8 @@ const nextConfig = {
   serverExternalPackages: ['nodemailer'],
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
+  generateBuildId: async () => 'build-v3',
+  generateBuildId: async () => 'build-v3',
 };
 
 module.exports = nextConfig;
