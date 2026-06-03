@@ -144,8 +144,8 @@ export default function PerformancePage() {
   const [activeReview, setActiveReview] = useState<MonthlyReview | null>(null);
   const [mode,         setMode]         = useState<'history' | 'form'>('history');
   const [form,         setForm]         = useState<Partial<MonthlyReview>>(emptyForm());
-  const [reviewTemplate, setReviewTemplate] = useState<'standard'|'detailed'>('standard')
-  const [detailedData, setDetailedData]       = useState<Record<string,string>>({})
+  const [reviewTemplate, setReviewTemplate] = useState('standard')
+  const [detailedData, setDetailedData]       = useState({})
   const [reviewMonth,  setReviewMonth]  = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
@@ -424,7 +424,7 @@ export default function PerformancePage() {
               <div className="mb-4 p-3 bg-indigo-50 rounded-xl border border-indigo-100">
                 <div className="text-xs font-semibold text-gray-600 mb-2">Review Template</div>
                 <div className="flex gap-2">
-                  {(['standard' as const,'detailed' as const]).map(t => (
+                  {(['standard','detailed']).map(t => (
                     <button key={t} onClick={() => setReviewTemplate(t)}
                       className={`px-3 py-1.5 text-xs rounded-lg font-semibold border transition-colors ${reviewTemplate===t ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
                       {t === 'standard' ? '📋 Standard Review' : '🔍 Detailed Review Template'}
