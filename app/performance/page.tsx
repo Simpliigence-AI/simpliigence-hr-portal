@@ -1,4 +1,5 @@
 'use client';
+import DetailedTemplate from './DetailedTemplate'
 
 import { useEffect, useState, useCallback , useMemo} from 'react';
 import { supabase } from '@/lib/supabase';
@@ -137,6 +138,9 @@ const DETAILED_QUESTIONS = [
   { id: 'teamwork', cat: '5. Teamwork & Culture', label: 'Teamwork & Morale', opts: ['Detrimental','Neutral Participant','Positive Contributor','Culture Champion'] },
 ]
 
+let reviewTemplate = 'standard'
+let detailedTemplateData = {} as Record<string,string>
+
 export default function PerformancePage() {
   const [employees,    setEmployees]    = useState<Employee[]>([]);
   const [selected,     setSelected]     = useState<Employee | null>(null);
@@ -198,6 +202,8 @@ export default function PerformancePage() {
     if (!selected) return;
     setSaving(true);
     const payload = { ...form, employee_id: selected.id, review_month: reviewMonth, score: calcScore(form) };
+      review_template: reviewTemplate,
+      detailed_data: reviewTemplate === 'detailed' ? detailedTemplateData : null,
       review_template: reviewTemplate,
       detailed_data: reviewTemplate === 'detailed' ? detailedData : null,
     let result;
@@ -434,6 +440,10 @@ export default function PerformancePage() {
               </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-500 mb-1 block">Manager Name</label>
+              <DetailedTemplate onDataChange={(t, d) => {
+                reviewTemplate = t
+                detailedTemplateData = d
+              }} />
                       <input value={form.manager_name ?? ''} onChange={e => setForm(f => ({ ...f, manager_name: e.target.value }))}
                         className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white" />
                     </div>
