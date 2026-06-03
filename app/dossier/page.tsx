@@ -273,6 +273,16 @@ function DossierInner() {
     if (data) { setEmployees(es => es.map(e => e.id === data.id ? data : e)); setSelected(data); setEditing(false); }
     setSaving(false);
   }
+  async function offboardEmployee() {
+    if (!selected) return
+    const name = selected.name
+    if (!window.confirm(`Mark ${name} as Ex-Employee? This removes them from all active views.`)) return
+    await supabase.from('employees').update({ status: 'Ex-Employee', active: false }).eq('id', selected.id)
+    setEmployees(es => es.filter(e => e.id !== selected.id))
+    setSelected(null)
+    alert(`${name} has been offboarded.`)
+  }
+
 
   const toggle = (k: string) => setRevealed(r => ({ ...r, [k]: !r[k] }));
   const F = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
@@ -1098,7 +1108,11 @@ function DossierInner() {
                   </div>
 
                   <div className="flex gap-3 pt-1">
-                    <button onClick={saveEdit} disabled={saving}
+                                  <button onClick={offboardEmployee}
+                className="px-3 py-2 bg-red-50 text-red-600 text-sm rounded-lg hover:bg-red-100 border border-red-200 font-medium mr-2">
+                Offboard Employee
+              </button>
+<button onClick={saveEdit} disabled={saving}
                       className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 font-medium">
                       {saving ? 'Saving…' : '✓ Save Changes'}
                     </button>
