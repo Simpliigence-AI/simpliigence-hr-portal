@@ -5,17 +5,17 @@ const DETAILED_QUESTIONS = [
   { id: 'role_fitment', cat: '1. Technical Performance & Execution', label: 'Role Fitment', opts: ['Development Needed','Developing','Proficient','Advanced'] },
   { id: 'delivery', cat: '1. Technical Performance & Execution', label: 'Delivery & Commitments', opts: ['Rarely','Sometimes','Consistently','Always'] },
   { id: 'quality_speed', cat: '1. Technical Performance & Execution', label: 'Quality vs. Speed', opts: ['Struggles to Balance','Inconsistent','Effective Balance','Exceptional Balance'] },
-  { id: 'skill_dev', cat: '1. Technical Performance & Execution', label: 'Skill Development', opts: ['Needs Improvement','Passive Learner','Proactive','Continuous Learner'] },
-  { id: 'ownership', cat: '2. Professional Traits & Mindset', label: 'Ownership', opts: ['Good','Very Good','Excellent'] },
+  { id: 'updating_skills', cat: '1. Technical Performance & Execution', label: 'Skill Development', opts: ['Needs Improvement','Passive Learner','Proactive','Continuous Learner'] },
+  { id: 'ownership', cat: '2. Professional Traits & Mindset',label: 'Ownership', opts: ['Good','Very Good','Excellent'] },
   { id: 'accountability', cat: '2. Professional Traits & Mindset', label: 'Accountability', opts: ['Good','Very Good','Excellent'] },
   { id: 'critical_thinking', cat: '2. Professional Traits & Mindset', label: 'Critical Thinking & Solution Proactivity', opts: ['Reactive','Occasionally Proactive','Highly Proactive'] },
   { id: 'innovation', cat: '2. Professional Traits & Mindset', label: 'Innovation & Going the Extra Mile', opts: ['Meets Expectations Only','Occasionally Steps Up','Consistently Goes the Extra Mile'] },
-  { id: 'autonomy', cat: '3. Leadership & Autonomy', label: 'Autonomy (IC vs. Lead)', opts: ['High Supervision Needed','Moderate Supervision Needed','Independent'] },
+  { id: 'independent', cat: '3. Leadership & Autonomy', label: 'Autonomy (IC vs. Lead)', opts: ['High Supervision Needed','Moderate Supervision Needed','Independent'] },
   { id: 'critical_situations', cat: '3. Leadership & Autonomy', label: 'Managing Critical Project Situations', opts: ['Easily Overwhelmed','Stabilizes Gradually','Calm & Effective','Thrives Under Pressure'] },
   { id: 'client_mgmt', cat: '4. Client Interactions', label: 'Management of Client / Client Calls', opts: ['Needs Intervention','Needs Occasional Support','Independent Management','Trusted Advisor'] },
-  { id: 'professionalism', cat: '4. Client Interactions', label: 'Professionalism in Client Interactions', opts: ['Needs Improvement','Generally Professional','Exemplary Professionalism'] },
-  { id: 'attitude', cat: '5. Teamwork & Culture', label: 'Attitude & Behavior', opts: ['Needs Improvement','Professional','Highly Positive'] },
-  { id: 'teamwork', cat: '5. Teamwork & Culture', label: 'Teamwork & Morale', opts: ['Detrimental','Neutral Participant','Positive Contributor','Culture Champion'] },
+  { id: 'client_professional', cat: '4. Client Interactions', label: 'Professionalism in Client Interactions', opts: ['Needs Improvement','Generally Professional','Exemplary Professionalism'] },
+  { id: 'professional_attitude', cat: '5. Teamwork & Culture', label: 'Attitude & Behavior', opts: ['Needs Improvement','Professional','Highly Positive'] },
+  { id: 'team_morale', cat: '5. Teamwork & Culture', label: 'Teamwork & Morale', opts: ['Detrimental','Neutral Participant','Positive Contributor','Culture Champion'] },
 ]
 
 type Props = {
