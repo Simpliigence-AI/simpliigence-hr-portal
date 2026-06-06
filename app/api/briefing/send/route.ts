@@ -46,7 +46,7 @@ function buildHtml(name: string, tasks: {title:string;status:string;priority:str
   <table width="100%"><tr>
     <td><div style="font-size:20px;font-weight:700;color:#fff;">Simpliigence</div>
         <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:2px;">HR · People Operations</div></td>
-    <td align="right"><div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;">Daily Briefing</div>
+    <td align="right"><div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;">HR Briefing</div>
                       <div style="font-size:13px;color:rgba(255,255,255,0.65);margin-top:3px;">${today}</div></td>
   </tr></table>
 </td></tr>
@@ -62,7 +62,7 @@ function buildHtml(name: string, tasks: {title:string;status:string;priority:str
 <tr><td style="background:#f8f8f8;border-radius:0 0 12px 12px;padding:18px 32px;">
   <table width="100%"><tr>
     <td style="font-size:11px;color:#999;line-height:1.6;">
-      ${fromName} · Simpliigence HR Portal · Weekdays at 8:00 AM IST<br>
+      ${fromName} · Simpliigence HR Portal · Every 3 days at 8:30 AM IST<br>
       <a href="https://simpliigence-hr-portal.vercel.app/actions" style="color:#185FA5;text-decoration:none;">View all in portal →</a>
     </td>
     <td align="right">
