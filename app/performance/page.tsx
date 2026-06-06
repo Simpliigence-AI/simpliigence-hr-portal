@@ -146,7 +146,7 @@ export default function PerformancePage() {
     setSelected(emp); setShowForm(false); setEditReview(null)
     setApReviewId(null); setExpandedScores(new Set())
     supabase.from('monthly_reviews').select('*').eq('employee_id', emp.id)
-      .order('review_month', { ascending: false })
+      .order('review_month', { ascending: false }).order('created_at', { ascending: false })
       .then(({ data }) => setReviews((data ?? []) as Review[]))
   }
 
@@ -206,10 +206,11 @@ export default function PerformancePage() {
       client_mgmt: a.client_mgmt || null, client_professional: a.client_professional || null,
       professional_attitude: a.professional_attitude || null, team_morale: a.team_morale || null,
     }
-    const { data: saved, error } = await supabase
-      .from('monthly_reviews')
-      .upsert(payload, { onConflict: 'employee_id,review_month' })
-      .select().single()
+    // multiple reviews per month are allowed - update only when editing an existing review
+    const query = editReview
+      ? supabase.from('monthly_reviews').update(payload).eq('id', editReview.id)
+      : supabase.from('monthly_reviews').insert(payload)
+    const { data: saved, error } = await query.select().single()
     if (error) { alert('Save failed: ' + error.message); setSaving(false); return }
     if (!editReview && form.review_template === 'detailed' && saved) {
       const autoPoints = generateActionPoints(a)
@@ -220,7 +221,7 @@ export default function PerformancePage() {
       }
     }
     const { data } = await supabase.from('monthly_reviews').select('*')
-      .eq('employee_id', selected.id).order('review_month', { ascending: false })
+      .eq('employee_id', selected.id).order('review_month', { ascending: false }).order('created_at', { ascending: false })
     setReviews((data ?? []) as Review[])
     setShowForm(false)
     if (saved?.id) setApReviewId(saved.id)
