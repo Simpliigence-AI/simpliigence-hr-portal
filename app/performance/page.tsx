@@ -113,9 +113,9 @@ export default function PerformancePage() {
         independent: r.independent ?? '',
         critical_situations: r.critical_situations ?? '',
         client_mgmt: r.client_mgmt ?? '',
-        professionalism: r.client_professional ?? '',
-        attitude: r.professional_attitude ?? '',
-        teamwork: r.team_morale ?? '',
+        client_professional: r.client_professional ?? '',
+        professional_attitude: r.professional_attitude ?? '',
+        team_morale: r.team_morale ?? '',
       },
     })
     setEditReview(r)
@@ -123,7 +123,7 @@ export default function PerformancePage() {
   }
 
   const saveReview = useCallback(async () => {
-    if (!selected) return
+    if (!selected) retur
     setSaving(true)
     const reviewMonth = `${form.sel_year}-${String(form.sel_month).padStart(2,'0')}-01`
     const a = form.detailed_answers
@@ -150,9 +150,9 @@ export default function PerformancePage() {
       independent: a.independent || a.autonomy || null,
       critical_situations: a.critical_situations || null,
       client_mgmt: a.client_mgmt || null,
-      client_professional: a.professionalism || null,
-      professional_attitude: a.attitude || null,
-      team_morale: a.teamwork || null,
+      client_professional: a.client_professional || null,
+      professional_attitude: a.professional_attitude || null,
+      team_morale: a.team_morale || null,
     }
     const { error } = await supabase
       .from('monthly_reviews')
