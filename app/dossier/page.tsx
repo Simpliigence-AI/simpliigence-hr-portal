@@ -278,8 +278,8 @@ function DossierInner() {
     const name = selected.name
     if (!window.confirm(`Mark ${name} as Ex-Employee? This removes them from all active views.`)) return
     await supabase.from('employees').update({ status: 'Ex-Employee', active: false }).eq('id', selected.id)
-    setEmployees(es => es.filter(e => e.id !== selected.id))
-    setSelected(null)
+        setEmployees(es => es.map(e => e.id === selected.id ? { ...e, status: 'Ex-Employee', active: false } : e))    setSelected(null)
+            setSelected(null)
     alert(`${name} has been offboarded.`)
   }
 
