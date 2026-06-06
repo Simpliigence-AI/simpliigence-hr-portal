@@ -10,7 +10,7 @@ const DETAILED_QUESTIONS = [
   { id: 'accountability', cat: '2. Professional Traits & Mindset', label: 'Accountability', opts: ['Good','Very Good','Excellent'] },
   { id: 'critical_thinking', cat: '2. Professional Traits & Mindset', label: 'Critical Thinking & Solution Proactivity', opts: ['Reactive','Occasionally Proactive','Highly Proactive'] },
   { id: 'innovation', cat: '2. Professional Traits & Mindset', label: 'Innovation & Going the Extra Mile', opts: ['Meets Expectations Only','Occasionally Steps Up','Consistently Goes the Extra Mile'] },
-  { id: 'independent', cat: '3. Leadership & Autonomy', label: 'Autonomy (IC vs. Lead)', opts: ['High Supervision Needed','Moderate Supervision Needed','Independent'] },
+  { id: 'independent', cat: '3. Leadership & Atonomy', label: 'Autonomy (IC vs. Lead)', opts: ['High Supervision Needed','Moderate Supervision Needed','Independent'] },
   { id: 'critical_situations', cat: '3. Leadership & Autonomy', label: 'Managing Critical Project Situations', opts: ['Easily Overwhelmed','Stabilizes Gradually','Calm & Effective','Thrives Under Pressure'] },
   { id: 'client_mgmt', cat: '4. Client Interactions', label: 'Management of Client / Client Calls', opts: ['Needs Intervention','Needs Occasional Support','Independent Management','Trusted Advisor'] },
   { id: 'client_professional', cat: '4. Client Interactions', label: 'Professionalism in Client Interactions', opts: ['Needs Improvement','Generally Professional','Exemplary Professionalism'] },
@@ -20,11 +20,13 @@ const DETAILED_QUESTIONS = [
 
 type Props = {
   onDataChange: (template: string, data: Record<string, string>) => void
+    initialTemplate?: string
+    initialAnswers?: Record<string, string>
 }
 
-export default function DetailedTemplate({ onDataChange }: Props) {
-  const [template, setTemplate] = useState('standard')
-  const [answers, setAnswers] = useState({} as Record<string, string>)
+export default function DetailedTemplate({ onDataChange, initialTemplate, initialAnswers }: Props) {
+  const [template, setTemplate] = useState(initialTemplate ?? 'standard')
+  const [answers, setAnswers] = useState<Record<string, string>>(initialAnswers ?? {})
 
   function handleTemplateChange(t: string) {
     setTemplate(t)
