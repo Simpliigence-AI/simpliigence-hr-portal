@@ -54,6 +54,7 @@ export default function PerformancePage() {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [formKey, setFormKey] = useState(0)
 
   useEffect(() => {
     supabase
@@ -84,6 +85,7 @@ export default function PerformancePage() {
     if (!selected) return
     setForm(initForm(selected.id))
     setEditReview(null)
+    setFormKey(k => k + 1)
     setShowForm(true)
   }
 
@@ -118,6 +120,7 @@ export default function PerformancePage() {
         team_morale: r.team_morale ?? '',
       },
     })
+    setFormKey(k => k + 1)
     setEditReview(r)
     setShowForm(true)
   }
@@ -220,6 +223,9 @@ export default function PerformancePage() {
                 <div className="bg-white rounded-xl border shadow-sm p-6 max-w-2xl">
                   <h3 className="text-base font-bold mb-4">{editReview ? 'Edit' : 'New'} Review — {selected.name}</h3>
                   <DetailedTemplate
+                    key={formKey}
+                    initialTemplate={form.review_template}
+                    initialAnswers={form.detailed_answers}
                     onDataChange={function(template: string, data: Record<string,string>) {
                       setForm(f => ({ ...f, review_template: template, detailed_answers: data }))
                     }}
