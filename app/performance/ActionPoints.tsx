@@ -36,7 +36,7 @@ function statusBadge(s: string) {
   if (s === 'Done') return 'bg-green-50 text-green-600 border border-green-200'
   if (s === 'In Progress') return 'bg-blue-50 text-blue-600 border border-blue-200'
   if (s === 'Deferred') return 'bg-gray-50 text-gray-500 border border-gray-200'
-  return 'bg-orange-50 text-orange-600 border border-orange-200'
+  return 'bg-orange-50 text-orange-600 border border-orange-200' // Open
 }
 
 const PRIORITY_ORDER: Record<string, number> = { High: 0, Medium: 1, Low: 2 }
@@ -51,6 +51,7 @@ export default function ActionPoints({ reviewId, employeeId, onClose }: Props) {
   const [points, setPoints] = useState<ActionPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<ActionPoint>>({})
   const [addingNew, setAddingNew] = useState(false)
@@ -60,51 +61,67 @@ export default function ActionPoints({ reviewId, employeeId, onClose }: Props) {
 
   async function loadPoints() {
     setLoading(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('review_action_points')
       .select('*')
       .eq('review_id', reviewId)
       .order('created_at', { ascending: true })
+    if (error) console.error('loadPoints error:', error)
     setPoints((data ?? []) as ActionPoint[])
     setLoading(false)
   }
 
   async function saveEdit(id: string) {
     setSaving(true)
-    await supabase
-      .from('review_action_points')
-      .update({ ...editForm, updated_at: new Date().toISOString() })
-      .eq('id', id)
-    setEditId(null)
-    await loadPoints()
-    setSaving(false)
+    setSaveError(null)
+    try {
+      const { error } = await supabase
+        .from('review_action_points')
+        .update({ ...editForm, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) { setSaveError(error.message); return }
+      setEditId(null)
+      await loadPoints()
+    } catch (e: any) {
+      setSaveError(e?.message ?? 'Unexpected error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function deletePoint(id: string) {
     if (!confirm('Delete this action point?')) return
-    await supabase.from('review_action_points').delete().eq('id', id)
+    const { error } = await supabase.from('review_action_points').delete().eq('id', id)
+    if (error) { alert('Delete failed: ' + error.message); return }
     await loadPoints()
   }
 
   async function addPoint() {
     if (!newForm.description.trim()) return
     setSaving(true)
-    await supabase.from('review_action_points').insert({
-      review_id: reviewId,
-      employee_id: employeeId,
-      category: newForm.category || 'General',
-      description: newForm.description,
-      priority: newForm.priority,
-      status: newForm.status,
-      due_date: newForm.due_date || null,
-      assigned_to: newForm.assigned_to || null,
-      notes: newForm.notes || null,
-      auto_generated: false,
-    })
-    setNewForm(EMPTY_NEW)
-    setAddingNew(false)
-    await loadPoints()
-    setSaving(false)
+    setSaveError(null)
+    try {
+      const { error } = await supabase.from('review_action_points').insert({
+        review_id: reviewId,
+        employee_id: employeeId,
+        category: newForm.category || 'General',
+        description: newForm.description,
+        priority: newForm.priority,
+        status: newForm.status,
+        due_date: newForm.due_date || null,
+        assigned_to: newForm.assigned_to || null,
+        notes: newForm.notes || null,
+        auto_generated: false,
+      })
+      if (error) { setSaveError(error.message); return }
+      setNewForm(EMPTY_NEW)
+      setAddingNew(false)
+      await loadPoints()
+    } catch (e: any) {
+      setSaveError(e?.message ?? 'Unexpected error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const sorted = [...points].sort((a, b) => {
@@ -118,55 +135,117 @@ export default function ActionPoints({ reviewId, employeeId, onClose }: Props) {
 
   return (
     <div className="bg-white rounded-xl border border-indigo-100 shadow-sm mt-4">
+      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-indigo-50 bg-indigo-50 rounded-t-xl">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-gray-900">Action Points</span>
             {points.length > 0 && (
-              <span className="text-xs text-gray-400">{openCount} open · {doneCount} done</span>
+              <span className="text-xs text-gray-400">
+                {openCount} open \u00b7 {doneCount} done
+              </span>
             )}
           </div>
-          <p className="text-xs text-indigo-500 mt-0.5">Auto-generated from review ratings — update status and assign owners</p>
+          <p className="text-xs text-indigo-500 mt-0.5">
+            Auto-generated from review ratings \u2014 update status and assign owners
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => { setAddingNew(true); setEditId(null) }}
-            className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors">
+          <button
+            onClick={() => { setAddingNew(true); setEditId(null); setSaveError(null) }}
+            className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+          >
             + Add Point
           </button>
           {onClose && (
-            <button onClick={onClose}
-              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors">
-              Close ✕
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors"
+            >
+              Close \u2715
             </button>
           )}
         </div>
       </div>
 
       {loading ? (
-        <div className="p-4 text-sm text-gray-400 text-center">Loading action points…</div>
+        <div className="p-4 text-sm text-gray-400 text-center">Loading action points\u2026</div>
       ) : (
         <div className="divide-y divide-gray-50">
+
+          {/* Error banner */}
+          {saveError && (
+            <div className="mx-4 mt-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between">
+              <span className="text-xs text-red-600">{saveError}</span>
+              <button onClick={() => setSaveError(null)} className="text-red-400 hover:text-red-600 text-xs ml-2">\u2715</button>
+            </div>
+          )}
+
+          {/* Add new form */}
           {addingNew && (
             <div className="p-4 bg-blue-50 border-b border-blue-100">
               <div className="text-xs font-semibold text-blue-700 mb-3">New Action Point</div>
               <div className="grid grid-cols-2 gap-2 mb-3">
-                <input value={newForm.category} onChange={e => setNewForm(f => ({ ...f, category: e.target.value }))}
-                  placeholder="Category (e.g. Delivery)" className="col-span-2 px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-blue-300 outline-none" />
-                <textarea value={newForm.description} onChange={e => setNewForm(f => ({ ...f, description: e.target.value }))}
-                  placeholder="Description (required)" rows={2} className="col-span-2 px-2 py-1.5 text-xs border rounded-lg resize-none focus:ring-2 focus:ring-blue-300 outline-none" />
-                <select value={newForm.priority} onChange={e => setNewForm(f => ({ ...f, priority: e.target.value }))} className="px-2 py-1.5 text-xs border rounded-lg bg-white">
+                <input
+                  value={newForm.category}
+                  onChange={e => setNewForm(f => ({ ...f, category: e.target.value }))}
+                  placeholder="Category (e.g. Delivery)"
+                  className="col-span-2 px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-blue-300 outline-none"
+                />
+                <textarea
+                  value={newForm.description}
+                  onChange={e => setNewForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="Description (required)"
+                  rows={2}
+                  className="col-span-2 px-2 py-1.5 text-xs border rounded-lg resize-none focus:ring-2 focus:ring-blue-300 outline-none"
+                />
+                <select
+                  value={newForm.priority}
+                  onChange={e => setNewForm(f => ({ ...f, priority: e.target.value }))}
+                  className="px-2 py-1.5 text-xs border rounded-lg bg-white"
+                >
                   {PRIORITIES.map(p => <option key={p}>{p}</option>)}
                 </select>
-                <select value={newForm.status} onChange={e => setNewForm(f => ({ ...f, status: e.target.value }))} className="px-2 py-1.5 text-xs border rounded-lg bg-white">
+                <select
+                  value={newForm.status}
+                  onChange={e => setNewForm(f => ({ ...f, status: e.target.value }))}
+                  className="px-2 py-1.5 text-xs border rounded-lg bg-white"
+                >
                   {STATUSES.map(s => <option key={s}>{s}</option>)}
                 </select>
-                <input type="date" value={newForm.due_date} onChange={e => setNewForm(f => ({ ...f, due_date: e.target.value }))} className="px-2 py-1.5 text-xs border rounded-lg" />
-                <input value={newForm.assigned_to} onChange={e => setNewForm(f => ({ ...f, assigned_to: e.target.value }))} placeholder="Assigned to" className="px-2 py-1.5 text-xs border rounded-lg" />
-                <input value={newForm.notes} onChange={e => setNewForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes (optional)" className="col-span-2 px-2 py-1.5 text-xs border rounded-lg" />
+                <input
+                  type="date"
+                  value={newForm.due_date}
+                  onChange={e => setNewForm(f => ({ ...f, due_date: e.target.value }))}
+                  className="px-2 py-1.5 text-xs border rounded-lg"
+                />
+                <input
+                  value={newForm.assigned_to}
+                  onChange={e => setNewForm(f => ({ ...f, assigned_to: e.target.value }))}
+                  placeholder="Assigned to"
+                  className="px-2 py-1.5 text-xs border rounded-lg"
+                />
+                <input
+                  value={newForm.notes}
+                  onChange={e => setNewForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Notes (optional)"
+                  className="col-span-2 px-2 py-1.5 text-xs border rounded-lg"
+                />
               </div>
               <div className="flex gap-2">
-                <button onClick={addPoint} disabled={saving || !newForm.description.trim()} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg font-semibold disabled:opacity-50">Save</button>
-                <button onClick={() => { setAddingNew(false); setNewForm(EMPTY_NEW) }} className="px-3 py-1.5 text-xs border rounded-lg text-gray-600 hover:bg-gray-50">Cancel</button>
+                <button
+                  onClick={addPoint}
+                  disabled={saving || !newForm.description.trim()}
+                  className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg font-semibold disabled:opacity-50"
+                >
+                  {saving ? 'Saving\u2026' : 'Save'}
+                </button>
+                <button
+                  onClick={() => { setAddingNew(false); setNewForm(EMPTY_NEW); setSaveError(null) }}
+                  className="px-3 py-1.5 text-xs border rounded-lg text-gray-600 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           )}
@@ -176,49 +255,124 @@ export default function ActionPoints({ reviewId, employeeId, onClose }: Props) {
           )}
 
           {sorted.map(pt => (
-            <div key={pt.id} className={`p-4 hover:bg-gray-50 transition-colors ${pt.status === 'Done' ? 'opacity-50' : ''}`}>
+            <div
+              key={pt.id}
+              className={`p-4 hover:bg-gray-50 transition-colors ${pt.status === 'Done' ? 'opacity-50' : ''}`}
+            >
               {editId === pt.id ? (
+                /* Edit inline form */
                 <div>
                   <div className="grid grid-cols-2 gap-2 mb-3">
-                    <input value={editForm.category ?? ''} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} placeholder="Category" className="px-2 py-1.5 text-xs border rounded-lg" />
-                    <div />
-                    <textarea value={editForm.description ?? ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={2} className="col-span-2 px-2 py-1.5 text-xs border rounded-lg resize-none focus:ring-2 focus:ring-blue-300 outline-none" />
-                    <select value={editForm.priority ?? 'Medium'} onChange={e => setEditForm(f => ({ ...f, priority: e.target.value }))} className="px-2 py-1.5 text-xs border rounded-lg bg-white">
+                    <input
+                      value={editForm.category ?? ''}
+                      onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))}
+                      placeholder="Category"
+                      className="px-2 py-1.5 text-xs border rounded-lg"
+                    />
+                    <div /> {/* spacer */}
+                    <textarea
+                      value={editForm.description ?? ''}
+                      onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+                      rows={2}
+                      className="col-span-2 px-2 py-1.5 text-xs border rounded-lg resize-none focus:ring-2 focus:ring-blue-300 outline-none"
+                    />
+                    <select
+                      value={editForm.priority ?? 'Medium'}
+                      onChange={e => setEditForm(f => ({ ...f, priority: e.target.value }))}
+                      className="px-2 py-1.5 text-xs border rounded-lg bg-white"
+                    >
                       {PRIORITIES.map(p => <option key={p}>{p}</option>)}
                     </select>
-                    <select value={editForm.status ?? 'Open'} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))} className="px-2 py-1.5 text-xs border rounded-lg bg-white">
+                    <select
+                      value={editForm.status ?? 'Open'}
+                      onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
+                      className="px-2 py-1.5 text-xs border rounded-lg bg-white"
+                    >
                       {STATUSES.map(s => <option key={s}>{s}</option>)}
                     </select>
-                    <input type="date" value={editForm.due_date ?? ''} onChange={e => setEditForm(f => ({ ...f, due_date: e.target.value }))} className="px-2 py-1.5 text-xs border rounded-lg" />
-                    <input value={editForm.assigned_to ?? ''} onChange={e => setEditForm(f => ({ ...f, assigned_to: e.target.value }))} placeholder="Assigned to" className="px-2 py-1.5 text-xs border rounded-lg" />
-                    <input value={editForm.notes ?? ''} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes" className="col-span-2 px-2 py-1.5 text-xs border rounded-lg" />
+                    <input
+                      type="date"
+                      value={editForm.due_date ?? ''}
+                      onChange={e => setEditForm(f => ({ ...f, due_date: e.target.value }))}
+                      className="px-2 py-1.5 text-xs border rounded-lg"
+                    />
+                    <input
+                      value={editForm.assigned_to ?? ''}
+                      onChange={e => setEditForm(f => ({ ...f, assigned_to: e.target.value }))}
+                      placeholder="Assigned to"
+                      className="px-2 py-1.5 text-xs border rounded-lg"
+                    />
+                    <input
+                      value={editForm.notes ?? ''}
+                      onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                      placeholder="Notes"
+                      className="col-span-2 px-2 py-1.5 text-xs border rounded-lg"
+                    />
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => saveEdit(pt.id)} disabled={saving} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg font-semibold disabled:opacity-50">Save</button>
-                    <button onClick={() => setEditId(null)} className="px-3 py-1.5 text-xs border rounded-lg text-gray-600 hover:bg-gray-50">Cancel</button>
+                    <button
+                      onClick={() => saveEdit(pt.id)}
+                      disabled={saving}
+                      className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg font-semibold disabled:opacity-50"
+                    >
+                      {saving ? 'Saving\u2026' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => { setEditId(null); setSaveError(null) }}
+                      className="px-3 py-1.5 text-xs border rounded-lg text-gray-600 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </div>
               ) : (
+                /* Read-only row */
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${priorityBadge(pt.priority)}`}>{pt.priority}</span>
-                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusBadge(pt.status)}`}>{pt.status}</span>
-                      {pt.category && <span className="text-[10px] font-medium text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded-full">{pt.category}</span>}
-                      {pt.auto_generated && <span className="text-[10px] text-purple-400 italic">auto</span>}
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${priorityBadge(pt.priority)}`}>
+                        {pt.priority}
+                      </span>
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusBadge(pt.status)}`}>
+                        {pt.status}
+                      </span>
+                      {pt.category && (
+                        <span className="text-[10px] font-medium text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded-full">
+                          {pt.category}
+                        </span>
+                      )}
+                      {pt.auto_generated && (
+                        <span className="text-[10px] text-purple-400 italic">auto</span>
+                      )}
                     </div>
                     <p className="text-xs text-gray-700 leading-relaxed">{pt.description}</p>
                     {(pt.assigned_to || pt.due_date || pt.notes) && (
                       <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                        {pt.assigned_to && <span className="text-[10px] text-gray-400">👤 {pt.assigned_to}</span>}
-                        {pt.due_date && <span className="text-[10px] text-gray-400">📅 Due {pt.due_date}</span>}
-                        {pt.notes && <span className="text-[10px] text-gray-400 italic">"{pt.notes}"</span>}
+                        {pt.assigned_to && (
+                          <span className="text-[10px] text-gray-400">\ud83d\udc64 {pt.assigned_to}</span>
+                        )}
+                        {pt.due_date && (
+                          <span className="text-[10px] text-gray-400">\ud83d\udcc5 Due {pt.due_date}</span>
+                        )}
+                        {pt.notes && (
+                          <span className="text-[10px] text-gray-400 italic">"{pt.notes}"</span>
+                        )}
                       </div>
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                    <button onClick={() => { setEditId(pt.id); setEditForm({ ...pt }); setAddingNew(false) }} className="px-2 py-1 text-[11px] text-blue-600 hover:underline font-medium">Edit</button>
-                    <button onClick={() => deletePoint(pt.id)} className="px-2 py-1 text-[11px] text-red-400 hover:underline">Del</button>
+                    <button
+                      onClick={() => { setEditId(pt.id); setEditForm({ ...pt }); setAddingNew(false); setSaveError(null) }}
+                      className="px-2 py-1 text-[11px] text-blue-600 hover:underline font-medium"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => deletePoint(pt.id)}
+                      className="px-2 py-1 text-[11px] text-red-400 hover:underline"
+                    >
+                      Del
+                    </button>
                   </div>
                 </div>
               )}
