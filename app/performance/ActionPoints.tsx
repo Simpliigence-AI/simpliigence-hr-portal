@@ -142,12 +142,12 @@ export default function ActionPoints({ reviewId, employeeId, onClose }: Props) {
             <span className="text-sm font-bold text-gray-900">Action Points</span>
             {points.length > 0 && (
               <span className="text-xs text-gray-400">
-                {openCount} open \u00b7 {doneCount} done
+                {openCount} open · {doneCount} done
               </span>
             )}
           </div>
           <p className="text-xs text-indigo-500 mt-0.5">
-            Auto-generated from review ratings \u2014 update status and assign owners
+            Auto-generated from review ratings — update status and assign owners
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -162,14 +162,14 @@ export default function ActionPoints({ reviewId, employeeId, onClose }: Props) {
               onClick={onClose}
               className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors"
             >
-              Close \u2715
+              Close ✕
             </button>
           )}
         </div>
       </div>
 
       {loading ? (
-        <div className="p-4 text-sm text-gray-400 text-center">Loading action points\u2026</div>
+        <div className="p-4 text-sm text-gray-400 text-center">Loading action points…</div>
       ) : (
         <div className="divide-y divide-gray-50">
 
@@ -177,7 +177,7 @@ export default function ActionPoints({ reviewId, employeeId, onClose }: Props) {
           {saveError && (
             <div className="mx-4 mt-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between">
               <span className="text-xs text-red-600">{saveError}</span>
-              <button onClick={() => setSaveError(null)} className="text-red-400 hover:text-red-600 text-xs ml-2">\u2715</button>
+              <button onClick={() => setSaveError(null)} className="text-red-400 hover:text-red-600 text-xs ml-2">✕</button>
             </div>
           )}
 
@@ -238,7 +238,7 @@ export default function ActionPoints({ reviewId, employeeId, onClose }: Props) {
                   disabled={saving || !newForm.description.trim()}
                   className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg font-semibold disabled:opacity-50"
                 >
-                  {saving ? 'Saving\u2026' : 'Save'}
+                  {saving ? 'Saving…' : 'Save'}
                 </button>
                 <button
                   onClick={() => { setAddingNew(false); setNewForm(EMPTY_NEW); setSaveError(null) }}
@@ -315,7 +315,7 @@ export default function ActionPoints({ reviewId, employeeId, onClose }: Props) {
                       disabled={saving}
                       className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg font-semibold disabled:opacity-50"
                     >
-                      {saving ? 'Saving\u2026' : 'Save'}
+                      {saving ? 'Saving…' : 'Save'}
                     </button>
                     <button
                       onClick={() => { setEditId(null); setSaveError(null) }}
@@ -349,10 +349,10 @@ export default function ActionPoints({ reviewId, employeeId, onClose }: Props) {
                     {(pt.assigned_to || pt.due_date || pt.notes) && (
                       <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                         {pt.assigned_to && (
-                          <span className="text-[10px] text-gray-400">\ud83d\udc64 {pt.assigned_to}</span>
+                          <span className="text-[10px] text-gray-400">👤 {pt.assigned_to}</span>
                         )}
                         {pt.due_date && (
-                          <span className="text-[10px] text-gray-400">\ud83d\udcc5 Due {pt.due_date}</span>
+                          <span className="text-[10px] text-gray-400">📅 Due {pt.due_date}</span>
                         )}
                         {pt.notes && (
                           <span className="text-[10px] text-gray-400 italic">"{pt.notes}"</span>
