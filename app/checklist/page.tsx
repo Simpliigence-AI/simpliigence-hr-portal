@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
+import { createBrowserClient } from '@supabase/ssr'
 
 // Types
 type Checklist = {
@@ -67,6 +67,10 @@ function statusColour(s: string) {
 }
 
 export default function WeeklyChecklistPage() {
+    const supabase = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        )
   const [checklists,      setChecklists]      = useState<Checklist[]>([])
   const [selectedId,      setSelectedId]      = useState<string | null>(null)
   const [items,           setItems]           = useState<ChecklistItem[]>([])
