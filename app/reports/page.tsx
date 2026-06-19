@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 
 type Employee = {
   id: string; name: string; role: string | null; dept: string | null
-  manager: string | null; region: string | null; type: string | null
+  manager: string | null; region: string | null; type: string | null; joined?: string | null
 }
 
 type ReviewRow = {
@@ -43,8 +43,8 @@ export default function ReportsPage() {
   const [loadingYear, setLoadingYear] = useState(false)
 
   useEffect(() => {
-    supabase.from('employees').select('id,name,role,dept,manager,region,type')
-      .eq('active', true).in('status', ['Active', 'Contractor']).order('name')
+        supabase.from('employees').select('id,name,role,dept,manager,region,type,joined')
+            .eq('status', 'Active').order('name')
       .then(({ data }) => { setEmployees((data ?? []) as Employee[]); setLoading(false) })
   }, [])
 
@@ -69,9 +69,12 @@ export default function ReportsPage() {
   const empById = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
 
   const reviewedIds = useMemo(() => new Set(monthReviews.map(r => r.employee_id)), [monthReviews])
-  const completed = employees.filter(e => reviewedIds.has(e.id))
-  const outstanding = employees.filter(e => !reviewedIds.has(e.id))
-  const pct = employees.length ? Math.round((completed.length / employees.length) * 100) : 0
+  const cutoff = new Date(selYear, selMonth - 1, 1)
+    cutoff.setMonth(cutoff.getMonth() - 1)
+    const eligible = employees.filter(e => e.joined && new Date(e.joined) <= cutoff)
+    const completed = eligible.filter(e => reviewedIds.has(e.id))
+    const outstanding = eligible.filter(e => !reviewedIds.has(e.id))
+    const pct = eligible.length ? Math.round((completed.length / eligible.length) * 100) : 0
 
   const taGroups = useMemo(() => {
     const g: Record<string, ReviewRow[]> = {}
