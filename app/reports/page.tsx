@@ -71,7 +71,7 @@ export default function ReportsPage() {
   const reviewedIds = useMemo(() => new Set(monthReviews.map(r => r.employee_id)), [monthReviews])
   const cutoff = new Date(selYear, selMonth - 1, 1)
     cutoff.setMonth(cutoff.getMonth() - 1)
-    const eligible = employees.filter(e => e.joined && new Date(e.joined) <= cutoff)
+        const eligible = employees.filter(e => !e.joined || new Date(e.joined) <= cutoff)
     const completed = eligible.filter(e => reviewedIds.has(e.id))
     const outstanding = eligible.filter(e => !reviewedIds.has(e.id))
     const pct = eligible.length ? Math.round((completed.length / eligible.length) * 100) : 0
