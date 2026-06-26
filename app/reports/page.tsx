@@ -10,7 +10,7 @@ type Employee = {
 type ReviewRow = {
   id: string; employee_id: string; review_month: string
   manager_name: string | null; targets: string | null; achievements: string | null
-  composite_score: number | null; mood: string | null; created_at: string
+  composite_score: number | null; mood: string | null; created_at: string; review_template?: string | null
 }
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -51,7 +51,7 @@ export default function ReportsPage() {
   useEffect(() => {
     setLoadingMonth(true)
     supabase.from('monthly_reviews')
-      .select('id,employee_id,review_month,manager_name,targets,achievements,composite_score,mood,created_at')
+      .select('id,employee_id,review_month,manager_name,targets,achievements,composite_score,mood,created_at,review_template')
       .eq('review_month', monthKey(selYear, selMonth))
       .order('created_at', { ascending: false })
       .then(({ data }) => { setMonthReviews((data ?? []) as ReviewRow[]); setLoadingMonth(false) })
@@ -69,6 +69,8 @@ export default function ReportsPage() {
   const empById = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
 
   const reviewedIds = useMemo(() => new Set(monthReviews.map(r => r.employee_id)), [monthReviews])
+  const detailedIds = useMemo(() => new Set(monthReviews.filter(r => r.review_template === 'detailed').map(r => r.employee_id)), [monthReviews])
+  const standardIds = useMemo(() => new Set(monthReviews.filter(r => r.review_template !== 'detailed').map(r => r.employee_id)), [monthReviews])
   const cutoff = new Date(selYear, selMonth - 1, 1)
     cutoff.setMonth(cutoff.getMonth() - 1)
         const eligible = employees.filter(e => !e.joined || new Date(e.joined) <= cutoff)
@@ -123,14 +125,18 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-5 gap-3 mb-6">
             <div className="bg-white rounded-xl border p-4">
               <div className="text-2xl font-bold text-gray-900">{employees.length}</div>
               <div className="text-xs text-gray-400 mt-1">Active employees</div>
             </div>
             <div className="bg-white rounded-xl border p-4">
-              <div className="text-2xl font-bold text-green-600">{completed.length}</div>
-              <div className="text-xs text-gray-400 mt-1">Reviews completed</div>
+              <div className="text-2xl font-bold text-green-600">{detailedIds.size}</div>
+              <div className="text-xs text-gray-400 mt-1">Detailed reviews</div>
+            </div>
+            <div className="bg-white rounded-xl border p-4">
+              <div className="text-2xl font-bold text-blue-600">{standardIds.size}</div>
+              <div className="text-xs text-gray-400 mt-1">Standard reviews</div>
             </div>
             <div className="bg-white rounded-xl border p-4">
               <div className={`text-2xl font-bold ${outstanding.length > 0 ? 'text-red-600' : 'text-green-600'}`}>{outstanding.length}</div>
