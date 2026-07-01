@@ -185,15 +185,16 @@ export async function sendDocumentForSignature(
 
   // ── Step 1.5: Add a signature field to the document ─────────────────────
   // Zoho Sign requires at least one field per signer before submit (error 9101).
-  // IMPORTANT: `fields` must be an object with typed sub-arrays (e.g. sign_fields),
-  // NOT a flat array — a flat array causes error 9004 "No match found".
+  // `fields` must be an object with typed sub-arrays — NOT a flat array (error 9004).
+  // `field_type_name` is required by Zoho Sign to identify the field type.
   const fieldsPayload = {
     fields: {
       sign_fields: [
         {
+          field_type_name: 'Signature',
           action_id: actionId,
           field_label: 'Signature',
-          field_name: 'Signature',
+          field_name: 'Signature1',
           is_mandatory: true,
           x_coord: 50,
           y_coord: 680,
@@ -204,6 +205,8 @@ export async function sendDocumentForSignature(
       ],
     },
   };
+
+  console.log('[zoho-sign] Step 1.5 payload:', JSON.stringify(fieldsPayload));
 
   let fieldsRes: Response;
   try {
@@ -225,6 +228,8 @@ export async function sendDocumentForSignature(
   } catch {
     throw new Error(`Sign API fields non-JSON response (HTTP ${fieldsRes.status})`);
   }
+
+  console.log('[zoho-sign] Step 1.5 response:', JSON.stringify(fieldsJson));
 
   if (fieldsJson.status !== 'success') {
     throw new Error(
@@ -252,6 +257,8 @@ export async function sendDocumentForSignature(
   } catch {
     throw new Error(`Sign API submit non-JSON response (HTTP ${submitRes.status})`);
   }
+
+  console.log('[zoho-sign] Step 2 submit response:', JSON.stringify(submitJson));
 
   if (submitJson.status !== 'success') {
     throw new Error(`Zoho Sign submit error (HTTP ${submitRes.status}): ${JSON.stringify(submitJson)}`);
