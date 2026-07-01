@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
       { name: signerName, email: signerEmail },
     );
   } catch (e) {
+    console.error('[api/documents] Zoho Sign error:', (e as Error).message);
     return NextResponse.json({ error: `Zoho Sign error: ${(e as Error).message}` }, { status: 500 });
   }
 
