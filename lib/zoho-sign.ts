@@ -160,10 +160,28 @@ export async function sendDocumentForSignature(
   }
 
   const req = json.requests as Record<string, unknown>;
-  const doc = (req.document_ids as Array<Record<string, string>> | undefined)?.[0];
-  const requestId = req.request_id as string;
-  const documentId = doc?.document_id ?? '';
-  const actionId = (req.actions as Array<Record<string, string>> | undefined)?.[0]?.action_id ?? '';
+  const requestId = (req.request_id as string) ?? '';
+
+  // document_ids may be [{document_id, document_name}] or just [string]
+  const rawDocs = req.document_ids as Array<Record<string, string> | string> | undefined;
+  const rawDoc = rawDocs?.[0];
+  const doc = typeof rawDoc === 'string' ? undefined : rawDoc;
+  const documentId = (typeof rawDoc === 'string' ? rawDoc : rawDoc?.document_id) ?? '';
+
+  // Extract action_id — Zoho Sign needs this to bind the signature field to the signer
+  const rawActions = req.actions as Array<Record<string, unknown>> | undefined;
+  const actionId = (rawActions?.[0]?.action_id as string) ?? '';
+
+  // Fail fast with full response detail so Vercel logs show what Zoho actually returned
+  console.log('[zoho-sign] Step 1 extracted:', { requestId, documentId, actionId });
+  if (!requestId || !documentId || !actionId) {
+    throw new Error(
+      `Zoho Sign Step 1 ID extraction failed — requestId="${requestId}", documentId="${documentId}", actionId="${actionId}" ` +
+      `| response.requests keys: ${Object.keys(req).join(', ')} ` +
+      `| document_ids: ${JSON.stringify(req.document_ids)} ` +
+      `| actions[0]: ${JSON.stringify(rawActions?.[0])}`,
+    );
+  }
 
   // ── Step 1.5: Add a signature field to the document ─────────────────────
   // Zoho Sign requires at least one field per signer before submit (error 9101)
@@ -206,7 +224,10 @@ export async function sendDocumentForSignature(
   }
 
   if (fieldsJson.status !== 'success') {
-    throw new Error(`Zoho Sign add fields error (HTTP ${fieldsRes.status}): ${JSON.stringify(fieldsJson)}`);
+    throw new Error(
+      `Zoho Sign add fields error (HTTP ${fieldsRes.status}): ${JSON.stringify(fieldsJson)} ` +
+      `[requestId=${requestId}, documentId=${documentId}, actionId=${actionId}]`,
+    );
   }
 
   // ── Step 2: Submit the request — this sends the signing email ───────────
