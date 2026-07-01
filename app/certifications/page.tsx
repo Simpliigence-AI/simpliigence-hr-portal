@@ -206,7 +206,7 @@ className="flex-1 max-w-sm px-3 py-1.5 text-sm border rounded-lg focus:ring-2 fo
 {/* Add Certification Modal */}
 {showAdd && (
 <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
-<div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4">
+<div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
 <div className="flex items-center justify-between mb-5">
 <h2 className="text-lg font-bold text-gray-900">Add Certification</h2>
 <button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-600 text-xl">â</button>
