@@ -183,24 +183,37 @@ export async function sendDocumentForSignature(
     );
   }
 
-  // ── Step 1.5: Add a signature field to the document ─────────────────────
+  // ── Step 1.5: Add a signature field via PUT /requests/{requestId} ────────
   // Zoho Sign requires at least one field per signer before submit (error 9101).
-  // `fields` must be an object with typed sub-arrays — NOT a flat array (error 9004).
-  // `field_type_name` is required by Zoho Sign to identify the field type.
+  // Correct API: PUT /requests/{requestId} with actions[].fields.image_fields
+  // Signature is an "image_field" type in Zoho Sign (NOT sign_fields — that causes 9004).
+  // Must send as application/x-www-form-urlencoded with data= prefix (NOT application/json).
   const fieldsPayload = {
-    fields: {
-      sign_fields: [
+    requests: {
+      request_name: requestName,
+      actions: [
         {
-          field_type_name: 'Signature',
           action_id: actionId,
-          field_label: 'Signature',
-          field_name: 'Signature1',
-          is_mandatory: true,
-          x_coord: 50,
-          y_coord: 680,
-          abs_width: 200,
-          abs_height: 50,
-          page_no: 0,          // Zoho Sign uses 0-based page numbers
+          recipient_name: signer.name,
+          recipient_email: signer.email,
+          action_type: 'SIGN',
+          fields: {
+            image_fields: [
+              {
+                field_type_name: 'Signature',
+                document_id: documentId,
+                action_id: actionId,
+                field_label: 'Signature',
+                field_name: 'Signature1',
+                is_mandatory: true,
+                x_coord: 50,
+                y_coord: 680,
+                abs_width: 200,
+                abs_height: 50,
+                page_no: 0,      // Zoho Sign uses 0-based page numbers
+              },
+            ],
+          },
         },
       ],
     },
@@ -210,16 +223,16 @@ export async function sendDocumentForSignature(
 
   let fieldsRes: Response;
   try {
-    fieldsRes = await fetch(`${SIGN_API}/requests/${requestId}/documents/${documentId}/fields`, {
-      method: 'POST',
+    fieldsRes = await fetch(`${SIGN_API}/requests/${requestId}`, {
+      method: 'PUT',
       headers: {
         Authorization: `Zoho-oauthtoken ${token}`,
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify(fieldsPayload),
+      body: new URLSearchParams({ data: JSON.stringify(fieldsPayload) }),
     });
   } catch (err) {
-    throw new Error(`Sign API add fields network error: ${(err as Error).message}`);
+    throw new Error(`Sign API update request network error: ${(err as Error).message}`);
   }
 
   let fieldsJson: Record<string, unknown>;
