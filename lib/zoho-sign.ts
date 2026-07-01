@@ -184,22 +184,25 @@ export async function sendDocumentForSignature(
   }
 
   // ── Step 1.5: Add a signature field to the document ─────────────────────
-  // Zoho Sign requires at least one field per signer before submit (error 9101)
+  // Zoho Sign requires at least one field per signer before submit (error 9101).
+  // IMPORTANT: `fields` must be an object with typed sub-arrays (e.g. sign_fields),
+  // NOT a flat array — a flat array causes error 9004 "No match found".
   const fieldsPayload = {
-    fields: [
-      {
-        field_type_name: 'Signature',
-        field_label: 'Signature',
-        field_name: 'Signature',
-        is_mandatory: true,
-        x_coord: 50,
-        y_coord: 680,
-        abs_width: 200,
-        abs_height: 50,
-        page_no: 1,
-        action_id: actionId,
-      },
-    ],
+    fields: {
+      sign_fields: [
+        {
+          action_id: actionId,
+          field_label: 'Signature',
+          field_name: 'Signature',
+          is_mandatory: true,
+          x_coord: 50,
+          y_coord: 680,
+          abs_width: 200,
+          abs_height: 50,
+          page_no: 0,          // Zoho Sign uses 0-based page numbers
+        },
+      ],
+    },
   };
 
   let fieldsRes: Response;
