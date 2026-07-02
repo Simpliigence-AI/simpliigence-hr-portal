@@ -1,5 +1,5 @@
 const TOKEN_URL = 'https://accounts.zoho.in/oauth/v2/token';
-const SIGN_API = 'https://sign.zoho.in/api/v1';
+const SIGN_API  = 'https://sign.zoho.in/api/v1';
 
 // ---------------------------------------------------------------------------
 // Token management — fetch a fresh access token using the stored refresh token
@@ -11,14 +11,14 @@ export async function getZohoAccessToken(): Promise<string> {
     return _cachedToken.token;
   }
 
-  const clientId = process.env.ZOHO_SIGN_CLIENT_ID;
+  const clientId     = process.env.ZOHO_SIGN_CLIENT_ID;
   const clientSecret = process.env.ZOHO_SIGN_CLIENT_SECRET;
   const refreshToken = process.env.ZOHO_SIGN_REFRESH_TOKEN;
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error(
       `Missing Zoho env vars: ${[
-        !clientId && 'ZOHO_SIGN_CLIENT_ID',
+        !clientId     && 'ZOHO_SIGN_CLIENT_ID',
         !clientSecret && 'ZOHO_SIGN_CLIENT_SECRET',
         !refreshToken && 'ZOHO_SIGN_REFRESH_TOKEN',
       ].filter(Boolean).join(', ')}`,
@@ -28,11 +28,11 @@ export async function getZohoAccessToken(): Promise<string> {
   let res: Response;
   try {
     res = await fetch(TOKEN_URL, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        client_id: clientId,
+      body:    new URLSearchParams({
+        grant_type:    'refresh_token',
+        client_id:     clientId,
         client_secret: clientSecret,
         refresh_token: refreshToken,
       }),
@@ -47,7 +47,7 @@ export async function getZohoAccessToken(): Promise<string> {
   }
 
   _cachedToken = {
-    token: data.access_token,
+    token:     data.access_token,
     expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
   };
   return _cachedToken.token;
@@ -62,7 +62,7 @@ function buildMultipartBody(
   requestDataJson: string,
 ): { body: Buffer; contentType: string } {
   const boundary = `----ZohoSignBoundary${Date.now()}`;
-  const CRLF = '\r\n';
+  const CRLF     = '\r\n';
 
   const parts: Buffer[] = [
     Buffer.from(
@@ -83,7 +83,7 @@ function buildMultipartBody(
   ];
 
   return {
-    body: Buffer.concat(parts),
+    body:        Buffer.concat(parts),
     contentType: `multipart/form-data; boundary=${boundary}`,
   };
 }
@@ -92,35 +92,47 @@ function buildMultipartBody(
 // Send a document (PDF bytes) for e-signature
 // ---------------------------------------------------------------------------
 export interface SignerInfo {
-  name: string;
+  name:  string;
   email: string;
 }
 
+/**
+ * Where to place the signature field on the document.
+ * page: 0-based page index.
+ * yFromTop: y coordinate in PDF points measured from the TOP of the page
+ *           (Zoho Sign convention — 0 = top, increases downward).
+ */
+export interface SignatureLocation {
+  page:     number;
+  yFromTop: number;
+}
+
 export interface SendForSignatureResult {
-  requestId: string;
+  requestId:  string;
   documentId: string;
   signingUrl?: string;
 }
 
 export async function sendDocumentForSignature(
-  pdfBytes: Buffer,
-  fileName: string,
-  requestName: string,
-  signer: SignerInfo,
+  pdfBytes:     Buffer,
+  fileName:     string,
+  requestName:  string,
+  signer:       SignerInfo,
+  signatureLoc?: SignatureLocation,
 ): Promise<SendForSignatureResult> {
   const token = await getZohoAccessToken();
 
   const requestData = {
     requests: {
-      request_name: requestName,
+      request_name:    requestName,
       expiration_days: 30,
-      is_sequential: true,
+      is_sequential:   true,
       actions: [
         {
-          recipient_name: signer.name,
-          recipient_email: signer.email,
-          action_type: 'SIGN',
-          signing_order: 1,
+          recipient_name:   signer.name,
+          recipient_email:  signer.email,
+          action_type:      'SIGN',
+          signing_order:    1,
           verify_recipient: false,
         },
       ],
@@ -137,9 +149,9 @@ export async function sendDocumentForSignature(
   let res: Response;
   try {
     res = await fetch(`${SIGN_API}/requests`, {
-      method: 'POST',
+      method:  'POST',
       headers: {
-        Authorization: `Zoho-oauthtoken ${token}`,
+        Authorization:  `Zoho-oauthtoken ${token}`,
         'Content-Type': contentType,
       },
       body,
@@ -159,20 +171,17 @@ export async function sendDocumentForSignature(
     throw new Error(`Zoho Sign create error (HTTP ${res.status}): ${JSON.stringify(json)}`);
   }
 
-  const req = json.requests as Record<string, unknown>;
-  const requestId = (req.request_id as string) ?? '';
+  const req        = json.requests as Record<string, unknown>;
+  const requestId  = (req.request_id as string) ?? '';
 
-  // document_ids may be [{document_id, document_name}] or just [string]
-  const rawDocs = req.document_ids as Array<Record<string, string> | string> | undefined;
-  const rawDoc = rawDocs?.[0];
-  const doc = typeof rawDoc === 'string' ? undefined : rawDoc;
+  const rawDocs  = req.document_ids as Array<Record<string, string> | string> | undefined;
+  const rawDoc   = rawDocs?.[0];
+  const doc      = typeof rawDoc === 'string' ? undefined : rawDoc;
   const documentId = (typeof rawDoc === 'string' ? rawDoc : rawDoc?.document_id) ?? '';
 
-  // Extract action_id — Zoho Sign needs this to bind the signature field to the signer
   const rawActions = req.actions as Array<Record<string, unknown>> | undefined;
-  const actionId = (rawActions?.[0]?.action_id as string) ?? '';
+  const actionId   = (rawActions?.[0]?.action_id as string) ?? '';
 
-  // Fail fast with full response detail so Vercel logs show what Zoho actually returned
   console.log('[zoho-sign] Step 1 extracted:', { requestId, documentId, actionId });
   if (!requestId || !documentId || !actionId) {
     throw new Error(
@@ -184,33 +193,38 @@ export async function sendDocumentForSignature(
   }
 
   // ── Step 1.5: Add a signature field via PUT /requests/{requestId} ────────
-  // Zoho Sign requires at least one field per signer before submit (error 9101).
-  // Correct API: PUT /requests/{requestId} with actions[].fields.image_fields
-  // Signature is an "image_field" type in Zoho Sign (NOT sign_fields — that causes 9004).
-  // Must send as application/x-www-form-urlencoded with data= prefix (NOT application/json).
+  // Signature is an "image_field" in Zoho Sign (NOT sign_fields — that causes error 9004).
+  // Must be sent as application/x-www-form-urlencoded with data= prefix (NOT application/json).
+  //
+  // Signature placement: use coordinates returned by the PDF builder (tracked at the exact
+  // position of the employee signature line in the "Verified and Accepted" section).
+  // Falls back to sensible defaults if no location is provided.
+  const sigPage  = signatureLoc?.page     ?? 2;    // page 3 (0-based) = "Verified & Accepted"
+  const sigY     = signatureLoc?.yFromTop ?? 700;  // near bottom of that page
+
   const fieldsPayload = {
     requests: {
       request_name: requestName,
       actions: [
         {
-          action_id: actionId,
-          recipient_name: signer.name,
+          action_id:       actionId,
+          recipient_name:  signer.name,
           recipient_email: signer.email,
-          action_type: 'SIGN',
+          action_type:     'SIGN',
           fields: {
             image_fields: [
               {
                 field_type_name: 'Signature',
-                document_id: documentId,
-                action_id: actionId,
-                field_label: 'Signature',
-                field_name: 'Signature1',
-                is_mandatory: true,
-                x_coord: 50,
-                y_coord: 680,
-                abs_width: 200,
-                abs_height: 50,
-                page_no: 0,      // Zoho Sign uses 0-based page numbers
+                document_id:     documentId,
+                action_id:       actionId,
+                field_label:     'Signature',
+                field_name:      'Signature1',
+                is_mandatory:    true,
+                x_coord:         50,
+                y_coord:         sigY,
+                abs_width:       200,
+                abs_height:      50,
+                page_no:         sigPage,
               },
             ],
           },
@@ -224,9 +238,9 @@ export async function sendDocumentForSignature(
   let fieldsRes: Response;
   try {
     fieldsRes = await fetch(`${SIGN_API}/requests/${requestId}`, {
-      method: 'PUT',
+      method:  'PUT',
       headers: {
-        Authorization: `Zoho-oauthtoken ${token}`,
+        Authorization:  `Zoho-oauthtoken ${token}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: new URLSearchParams({ data: JSON.stringify(fieldsPayload) }),
@@ -255,7 +269,7 @@ export async function sendDocumentForSignature(
   let submitRes: Response;
   try {
     submitRes = await fetch(`${SIGN_API}/requests/${requestId}/submit`, {
-      method: 'POST',
+      method:  'POST',
       headers: {
         Authorization: `Zoho-oauthtoken ${token}`,
       },
