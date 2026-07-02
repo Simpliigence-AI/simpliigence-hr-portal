@@ -338,11 +338,25 @@ class DocBuilder {
    EMPLOYMENT CONTRACT (Offer Letter)
 ═══════════════════════════════════════════════════════════════════════════ */
 
+export interface OfferLetterResult {
+  pdfBytes:           Buffer;
+  title:              string;
+  signaturePage:      number;  // 0-based page index
+  signatureYFromTop:  number;  // y in PDF points measured from page TOP (Zoho Sign convention)
+}
+
 export async function generateOfferLetter(
   d: OfferLetterDetails,
-): Promise<{ pdfBytes: Buffer; title: string }> {
+): Promise<OfferLetterResult> {
   const b = new DocBuilder();
-  const totalCTC = d.fixedAnnualCTC + (d.variableAnnualCTC ?? 0);
+
+  // ── Letterhead (matches Experience / Increment letters) ─────────────────
+  b.print('SIMPLIIGENCE PRIVATE LIMITED', PAGE_W / 2 - 100, 18, true);
+  b.print('Technology Consulting  |  Salesforce  |  AI/ML  |  GCC Advisory', PAGE_W / 2 - 130, 8.5);
+  b.print('No. 179/1, 10th-A Main Road, Indiranagar 2nd Stage, Bangalore, India - 560038', LM, 8.5);
+  b.gap(4);
+  b.hRule(1.5);
+  b.gap(16);
 
   // ── Page 1 ─────────────────────────────────────────────────────────────
 
@@ -496,6 +510,11 @@ export async function generateOfferLetter(
   b.para(`I have read, understood and accepted the above Employee Service Conditions/Contract. I understand that the Employee Service Conditions are the basis of my employment with the Company. I have also ensured that the Company has good prospects and is capable of offering me career growth. I am under no obligation or duress to accept these terms and conditions of employment; I accept them of my own free choice and will.`);
   b.gap(36);
 
+  // ── Capture employee signature position BEFORE printing the line ────────
+  // b.y is in PDF native coords (from BOTTOM). Zoho Sign uses y from TOP.
+  const empSigPage = b.pageNum - 1;          // 0-based
+  const empSigYFromTop = PAGE_H - b.y;       // convert to Zoho Sign convention
+
   b.print('__________________', LM, 11);
   b.print(d.employeeName, LM, 11, true);
   b.gap(8);
@@ -532,7 +551,12 @@ export async function generateOfferLetter(
   b.print('__________________', LM, 11);
   b.print(d.employeeName, LM, 11, true);
 
-  return { pdfBytes: b.build(), title: `Employment Contract - ${d.employeeName}` };
+  return {
+    pdfBytes:          b.build(),
+    title:             `Employment Contract - ${d.employeeName}`,
+    signaturePage:     empSigPage,
+    signatureYFromTop: empSigYFromTop,
+  };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
