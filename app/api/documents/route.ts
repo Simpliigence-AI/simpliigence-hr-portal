@@ -41,9 +41,11 @@ export async function POST(req: NextRequest) {
   // Generate PDF
   let pdfBytes: Buffer;
   let title: string;
+  let signaturePage: number | undefined;
+  let signatureYFromTop: number | undefined;
   try {
     if (type === 'offer') {
-      ({ pdfBytes, title } = await generateOfferLetter(details));
+      ({ pdfBytes, title, signaturePage, signatureYFromTop } = await generateOfferLetter(details));
     } else if (type === 'experience') {
       ({ pdfBytes, title } = await generateExperienceLetter(details));
     } else if (type === 'increment') {
@@ -58,14 +60,17 @@ export async function POST(req: NextRequest) {
   // Send to Zoho Sign
   let zohoResult;
   try {
+    const signatureLoc = (signaturePage !== undefined && signatureYFromTop !== undefined)
+      ? { page: signaturePage, yFromTop: signatureYFromTop }
+      : undefined;
     zohoResult = await sendDocumentForSignature(
       pdfBytes,
       `${title.replace(/\s+/g, '_')}.pdf`,
       title,
       { name: signerName, email: signerEmail },
+      signatureLoc,
     );
   } catch (e) {
-    console.error('[api/documents] Zoho Sign error:', (e as Error).message);
     return NextResponse.json({ error: `Zoho Sign error: ${(e as Error).message}` }, { status: 500 });
   }
 
