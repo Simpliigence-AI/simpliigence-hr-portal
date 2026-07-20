@@ -1,422 +1,513 @@
-'use client'
-import { useState, useCallback, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
-import DetailedTemplate from './DetailedTemplate'
-import ActionPoints from './ActionPoints'
-import { calculateScore, calculateTrend, generateActionPoints, type TrendDirection } from '@/lib/scoring'
+'use client';
 
-type Employee = {
-  id: string; name: string; role: string | null; dept: string | null
-  manager: string | null; region: string | null; type: string | null
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { supabase } from '@/lib/supabase';
+import type { Employee } from '@/lib/database.types';
+import { cn } from '@/lib/utils';
+import Avatar from '@/components/Avatar';
+
+const ADMIN_EMAIL = 'raghu.seetharam@simpliigence.com';
+
+// Collect all direct + indirect reports recursively
+function getReports(all: Employee[], managerName: string): Employee[] {
+  const direct = all.filter(e =>
+    (e.manager ?? '').trim().toLowerCase() === managerName.trim().toLowerCase()
+  );
+  return [...direct, ...direct.flatMap(d => getReports(all, d.name))];
 }
 
-type Review = {
-  id: string; employee_id: string; review_month: string
-  manager_name: string | null; project: string | null; billable: boolean | null
-  mood: string | null; targets: string | null; achievements: string | null
-  overall_feedback: string | null; review_template: string | null
-  detailed_data: Record<string,string> | null; created_at: string
-  composite_score: number | null
-  role_fitment: string|null; delivery: string|null; quality_speed: string|null
-  updating_skills: string|null; ownership: string|null; accountability: string|null
-  critical_thinking: string|null; innovation: string|null; independent: string|null
-  critical_situations: string|null; client_mgmt: string|null; client_professional: string|null
-  professional_attitude: string|null; team_morale: string|null
+// ─── Types ────────────────────────────────────────────────────
+type Rating = 'G' | 'VG' | 'E' | '';
+type Mood   = 'Happy' | 'Neutral' | 'Concerned' | 'Stressed' | '';
+
+interface MonthlyReview {
+  id: string;
+  employee_id: string;
+  review_month: string;
+  manager_name: string | null;
+  project: string | null;
+  billable: boolean | null;
+  mood: Mood;
+  role_fitment: Rating;
+  innovation: Rating;
+  delivery: Rating;
+  critical_situations: Rating;
+  client_mgmt: Rating;
+  teamwork: Rating;
+  ownership: Rating;
+  problem_solving: Rating;
+  client_professional: Rating;
+  accountability: Rating;
+  critical_thinking: Rating;
+  proactive: Rating;
+  independent: Rating;
+  quality_speed: Rating;
+  updating_skills: Rating;
+  professional_attitude: Rating;
+  team_morale: Rating;
+  targets: string | null;
+  achievements: string | null;
+  overall_feedback: string | null;
+  score: number | null;
+  created_at: string;
 }
 
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
-const YEARS = [2024, 2025, 2026]
-const BILLABLE_OPTS = ['Yes','No','Partial']
-const MOOD_OPTS = ['Excellent','Good','Neutral','Needs Support']
+const RATING_FIELDS: { key: keyof MonthlyReview; label: string; group: string }[] = [
+  { key: 'role_fitment',          label: 'Role Fitment — meets technical/functional skills?',     group: 'Delivery & Performance' },
+  { key: 'delivery',              label: 'Meets delivery expectations & commitments?',             group: 'Delivery & Performance' },
+  { key: 'critical_situations',   label: 'Managing critical project situations?',                  group: 'Delivery & Performance' },
+  { key: 'quality_speed',         label: 'Balances quality and speed effectively?',                group: 'Delivery & Performance' },
+  { key: 'client_mgmt',           label: 'Management of client calls (needs intervention?)',       group: 'Client & Stakeholder' },
+  { key: 'client_professional',   label: 'Handles client interactions professionally?',            group: 'Client & Stakeholder' },
+  { key: 'proactive',             label: 'Proactive in proposing solutions and improvements?',     group: 'Client & Stakeholder' },
+  { key: 'teamwork',              label: 'Teamwork & attitude',                                    group: 'Collaboration & Culture' },
+  { key: 'ownership',             label: 'Ownership',                                              group: 'Collaboration & Culture' },
+  { key: 'accountability',        label: 'Accountability',                                         group: 'Collaboration & Culture' },
+  { key: 'independent',           label: 'Works independently as an IC / Lead?',                   group: 'Collaboration & Culture' },
+  { key: 'professional_attitude', label: 'Demonstrates positive & professional attitude?',         group: 'Collaboration & Culture' },
+  { key: 'team_morale',           label: 'Contributes positively to team morale & culture?',       group: 'Collaboration & Culture' },
+  { key: 'innovation',            label: 'Innovation / goes the extra mile?',                      group: 'Growth & Skills' },
+  { key: 'problem_solving',       label: 'Problem solving',                                        group: 'Growth & Skills' },
+  { key: 'critical_thinking',     label: 'Critical thinking',                                      group: 'Growth & Skills' },
+  { key: 'updating_skills',       label: 'Actively updating skills?',                              group: 'Growth & Skills' },
+];
 
-function initForm(empId: string) {
-  const now = new Date()
+const GROUPS = ['Delivery & Performance', 'Client & Stakeholder', 'Collaboration & Culture', 'Growth & Skills'];
+
+const RATING_OPTIONS = [
+  { value: 'G'  as Rating, label: 'Good',      color: 'bg-blue-100 text-blue-700 border-blue-300' },
+  { value: 'VG' as Rating, label: 'Very Good', color: 'bg-purple-100 text-purple-700 border-purple-300' },
+  { value: 'E'  as Rating, label: 'Excellent', color: 'bg-green-100 text-green-700 border-green-300' },
+];
+
+const MOOD_OPTIONS = [
+  { value: 'Happy'     as Mood, emoji: '😊', label: 'Happy',     color: 'bg-green-100 text-green-700 border-green-300' },
+  { value: 'Neutral'   as Mood, emoji: '😐', label: 'Neutral',   color: 'bg-gray-100 text-gray-700 border-gray-300' },
+  { value: 'Concerned' as Mood, emoji: '😟', label: 'Concerned', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
+  { value: 'Stressed'  as Mood, emoji: '😰', label: 'Stressed',  color: 'bg-red-100 text-red-700 border-red-300' },
+];
+
+const SCORE_VAL: Record<string, number> = { G: 1, VG: 2, E: 3 };
+
+function calcScore(form: Partial<MonthlyReview>): number | null {
+  const vals = RATING_FIELDS
+    .map(f => SCORE_VAL[(form[f.key] as string) ?? ''] ?? null)
+    .filter((v): v is number => v !== null);
+  if (vals.length === 0) return null;
+  return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
+}
+
+function scoreColor(s: number | null) {
+  if (s === null) return 'text-gray-400';
+  if (s >= 2.5) return 'text-green-600';
+  if (s >= 1.8) return 'text-blue-600';
+  return 'text-orange-500';
+}
+
+function scoreLabel(s: number | null) {
+  if (s === null) return '—';
+  if (s >= 2.5) return 'Excellent';
+  if (s >= 1.8) return 'Very Good';
+  return 'Good';
+}
+
+function monthLabel(iso: string) {
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+function emptyForm(): Partial<MonthlyReview> {
   return {
-    employee_id: empId,
-    sel_month: now.getMonth() + 1,
-    sel_year: now.getFullYear(),
-    manager_name: '',
-    project: '',
-    billable: true,
-    mood: 'Good',
-    targets: '',
-    achievements: '',
-    overall_feedback: '',
-    review_template: 'standard',
-    detailed_answers: {} as Record<string,string>,
-  }
+    manager_name: '', project: '', billable: true, mood: '' as Mood,
+    role_fitment: '' as Rating, innovation: '' as Rating, delivery: '' as Rating,
+    critical_situations: '' as Rating, client_mgmt: '' as Rating, teamwork: '' as Rating,
+    ownership: '' as Rating, problem_solving: '' as Rating, client_professional: '' as Rating,
+    accountability: '' as Rating, critical_thinking: '' as Rating, proactive: '' as Rating,
+    independent: '' as Rating, quality_speed: '' as Rating, updating_skills: '' as Rating,
+    professional_attitude: '' as Rating, team_morale: '' as Rating,
+    targets: '', achievements: '', overall_feedback: '',
+  };
 }
 
-function ScoreBadge({ score }: { score: number }) {
-  const cls = score >= 75 ? 'bg-green-100 text-green-700' : score >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
-  return (
-    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${cls}`} title="Composite performance score">
-      {score}/100
-    </span>
-  )
-}
-
-const TREND_CFG: Record<TrendDirection, { icon: string; cls: string; label: string }> = {
-  up_strong:   { icon: '\u2191\u2191', cls: 'text-green-600', label: 'Strong improvement vs previous review' },
-  up:          { icon: '\u2191',       cls: 'text-green-500', label: 'Improving vs previous review' },
-  stable:      { icon: '\u2192',       cls: 'text-gray-400',  label: 'Stable vs previous review' },
-  down:        { icon: '\u2193',       cls: 'text-amber-500', label: 'Declining vs previous review' },
-  down_strong: { icon: '\u2193\u2193', cls: 'text-red-500',   label: 'Significant decline vs previous review' },
-}
-
-function TrendBadge({ trend }: { trend: TrendDirection }) {
-  const c = TREND_CFG[trend]
-  return <span className={`text-sm font-bold leading-none ${c.cls}`} title={c.label}>{c.icon}</span>
-}
-
-const SCORE_MAP_INLINE: Record<string,Record<string,number>> = {
-  role_fitment:{'Development Needed':25,'Developing':50,'Proficient':75,'Advanced':100},
-  delivery:{'Rarely':25,'Sometimes':50,'Consistently':75,'Always':100},
-  quality_speed:{'Struggles to Balance':25,'Inconsistent':50,'Effective Balance':75,'Exceptional Balance':100},
-  updating_skills:{'Needs Improvement':25,'Passive Learner':50,'Proactive':75,'Continuous Learner':100},
-  ownership:{'Good':60,'Very Good':80,'Excellent':100},
-  accountability:{'Good':60,'Very Good':80,'Excellent':100},
-  critical_thinking:{'Reactive':33,'Occasionally Proactive':67,'Highly Proactive':100},
-  innovation:{'Meets Expectations Only':33,'Occasionally Steps Up':67,'Consistently Goes the Extra Mile':100},
-  independent:{'High Supervision Needed':33,'Moderate Supervision Needed':67,'Independent':100},
-  critical_situations:{'Easily Overwhelmed':25,'Stabilizes Gradually':50,'Calm & Effective':75,'Thrives Under Pressure':100},
-  client_mgmt:{'Needs Intervention':25,'Needs Occasional Support':50,'Independent Management':75,'Trusted Advisor':100},
-  client_professional:{'Needs Improvement':33,'Generally Professional':67,'Exemplary Professionalism':100},
-  professional_attitude:{'Needs Improvement':33,'Professional':67,'Highly Positive':100},
-  team_morale:{'Detrimental':25,'Neutral Participant':50,'Positive Contributor':75,'Culture Champion':100},
-}
-const WEIGHTS_INLINE: Record<string,number> = {
-  role_fitment:8,delivery:8,quality_speed:7,updating_skills:7,
-  ownership:6,accountability:6,critical_thinking:7,innovation:6,
-  independent:7,critical_situations:8,client_mgmt:8,client_professional:7,
-  professional_attitude:7,team_morale:8,
-}
-const CAT_FIELDS = [
-  { label: 'Technical Performance', fields: ['role_fitment','delivery','quality_speed','updating_skills'] },
-  { label: 'Professional Mindset',  fields: ['ownership','accountability','critical_thinking','innovation'] },
-  { label: 'Leadership & Autonomy', fields: ['independent','critical_situations'] },
-  { label: 'Client Interactions',   fields: ['client_mgmt','client_professional'] },
-  { label: 'Teamwork & Culture',    fields: ['professional_attitude','team_morale'] },
-]
-
-function catScore(fields: string[], ans: Record<string, string|null|undefined>) {
-  let tw = 0, ws = 0
-  for (const f of fields) {
-    const v = ans[f]; const w = WEIGHTS_INLINE[f]
-    if (v && SCORE_MAP_INLINE[f]?.[v] !== undefined) { ws += SCORE_MAP_INLINE[f][v] * w; tw += w }
-  }
-  return tw === 0 ? null : Math.round((ws / tw) * 10) / 10
-}
-
-function ScoreBar({ label, score }: { label: string; score: number | null }) {
-  if (score == null) return null
-  const color = score >= 75 ? 'bg-green-400' : score >= 50 ? 'bg-amber-400' : 'bg-red-400'
-  return (
-    <div className="flex items-center gap-2 mb-1">
-      <span className="text-[10px] text-gray-400 w-32 shrink-0 truncate">{label}</span>
-      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${Math.round(score)}%` }} />
-      </div>
-      <span className="text-[10px] text-gray-500 w-8 text-right">{score}</span>
-    </div>
-  )
-}
-
+// ─── Main Page ────────────────────────────────────────────────
 export default function PerformancePage() {
-  const [employees, setEmployees] = useState<Employee[]>([])
-  const [selected, setSelected] = useState<Employee | null>(null)
-  const [reviews, setReviews] = useState<Review[]>([])
-  const [form, setForm] = useState(initForm(''))
-  const [editReview, setEditReview] = useState<Review | null>(null)
-  const [showForm, setShowForm] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [formKey, setFormKey] = useState(0)
-  const [apReviewId, setApReviewId] = useState<string | null>(null)
-  const [expandedScores, setExpandedScores] = useState<Set<string>>(new Set())
+  const [employees,    setEmployees]    = useState<Employee[]>([]);
+  const [selected,     setSelected]     = useState<Employee | null>(null);
+  const [reviews,      setReviews]      = useState<MonthlyReview[]>([]);
+  const [activeReview, setActiveReview] = useState<MonthlyReview | null>(null);
+  const [mode,         setMode]         = useState<'history' | 'form'>('history');
+  const [form,         setForm]         = useState<Partial<MonthlyReview>>(emptyForm());
+  const [reviewMonth,  setReviewMonth]  = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [saving,      setSaving]      = useState(false);
+  const [loading,     setLoading]     = useState(false);
+  const [search,      setSearch]      = useState('');
+  const [userEmail,   setUserEmail]   = useState<string | null>(null);
+  const [managerName, setManagerName] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from('employees').select('id,name,role,dept,manager,region,type')
-      .eq('active', true).in('status', ['Active', 'Contractor']).order('name')
-      .then(({ data }) => { setEmployees((data ?? []) as Employee[]); setLoading(false) })
-  }, [])
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUserEmail(session?.user?.email ?? null);
+    });
+  }, []);
+
+  useEffect(() => {
+    supabase.from('employees').select('*').eq('active', true).order('name')
+      .then(({ data }) => setEmployees(data ?? []));
+  }, []);
+
+  // Resolve manager's canonical name once both email and employees are loaded
+  useEffect(() => {
+    if (!userEmail || employees.length === 0) return;
+    if (userEmail === ADMIN_EMAIL) { setManagerName(null); return; }
+    const emp = employees.find(e => e.email?.toLowerCase() === userEmail.toLowerCase());
+    if (emp) {
+      setManagerName(emp.name);
+    } else {
+      const derived = userEmail.split('@')[0].split('.').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+      setManagerName(derived);
+    }
+  }, [userEmail, employees]);
+
+  const loadReviews = useCallback(async (empId: string) => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('monthly_reviews').select('*')
+      .eq('employee_id', empId)
+      .order('review_month', { ascending: false });
+    setReviews((data ?? []) as MonthlyReview[]);
+    setLoading(false);
+  }, []);
 
   function selectEmployee(emp: Employee) {
-    setSelected(emp); setShowForm(false); setEditReview(null)
-    setApReviewId(null); setExpandedScores(new Set())
-    supabase.from('monthly_reviews').select('*').eq('employee_id', emp.id)
-      .order('review_month', { ascending: false }).order('created_at', { ascending: false })
-      .then(({ data }) => setReviews((data ?? []) as Review[]))
+    setSelected(emp); setMode('history'); setActiveReview(null); loadReviews(emp.id);
   }
 
-  function startNew() {
-    if (!selected) return
-    setForm(initForm(selected.id)); setEditReview(null)
-    setFormKey(k => k + 1); setApReviewId(null); setShowForm(true)
+  async function startNewReview() {
+    const { data: targetRow } = await supabase
+      .from('employee_targets')
+      .select('default_targets')
+      .eq('employee_id', selected!.id)
+      .maybeSingle();
+    const defaultTargets = targetRow?.default_targets ?? '';
+    setForm({ ...emptyForm(), review_month: reviewMonth, targets: defaultTargets });
+    setActiveReview(null);
+    setMode('form');
   }
 
-  function startEdit(r: Review) {
-    const d = new Date(r.review_month)
-    setForm({
-      employee_id: r.employee_id,
-      sel_month: d.getMonth() + 1,
-      sel_year: d.getFullYear(),
-      manager_name: r.manager_name ?? '',
-      project: r.project ?? '',
-      billable: r.billable ?? true,
-      mood: r.mood ?? 'Good',
-      targets: r.targets ?? '',
-      achievements: r.achievements ?? '',
-      overall_feedback: r.overall_feedback ?? '',
-      review_template: r.review_template ?? 'standard',
-      detailed_answers: {
-        role_fitment: r.role_fitment ?? '', delivery: r.delivery ?? '',
-        quality_speed: r.quality_speed ?? '', updating_skills: r.updating_skills ?? '',
-        ownership: r.ownership ?? '', accountability: r.accountability ?? '',
-        critical_thinking: r.critical_thinking ?? '', innovation: r.innovation ?? '',
-        independent: r.independent ?? '', critical_situations: r.critical_situations ?? '',
-        client_mgmt: r.client_mgmt ?? '', client_professional: r.client_professional ?? '',
-        professional_attitude: r.professional_attitude ?? '', team_morale: r.team_morale ?? '',
-      },
-    })
-    setFormKey(k => k + 1); setEditReview(r); setShowForm(true)
+  function editReview(r: MonthlyReview) {
+    setForm({ ...r }); setReviewMonth(r.review_month); setActiveReview(r); setMode('form');
   }
 
-  const saveReview = useCallback(async () => {
-    if (!selected) return
-    setSaving(true)
-    const reviewMonth = `${form.sel_year}-${String(form.sel_month).padStart(2,'0')}-01`
-    const a = form.detailed_answers
-    const score = form.review_template === 'detailed' ? calculateScore(a) : null
-    const payload = {
-      employee_id: selected.id, review_month: reviewMonth,
-      manager_name: form.manager_name || null, project: form.project || null,
-      billable: form.billable, mood: form.mood,
-      targets: form.targets || null, achievements: form.achievements || null,
-      overall_feedback: form.overall_feedback || null,
-      review_template: form.review_template,
-      detailed_data: form.review_template === 'detailed' ? a : null,
-      composite_score: score,
-      role_fitment: a.role_fitment || null, delivery: a.delivery || null,
-      quality_speed: a.quality_speed || null, updating_skills: a.updating_skills || null,
-      ownership: a.ownership || null, accountability: a.accountability || null,
-      critical_thinking: a.critical_thinking || null, innovation: a.innovation || null,
-      independent: a.independent || null, critical_situations: a.critical_situations || null,
-      client_mgmt: a.client_mgmt || null, client_professional: a.client_professional || null,
-      professional_attitude: a.professional_attitude || null, team_morale: a.team_morale || null,
+  const setR = (key: keyof MonthlyReview) => (val: string) =>
+    setForm(f => ({ ...f, [key]: val }));
+
+  async function saveReview() {
+    if (!selected) return;
+    setSaving(true);
+    const payload = { ...form, employee_id: selected.id, review_month: reviewMonth, score: calcScore(form) };
+    let result;
+    if (activeReview) {
+      ({ data: result } = await supabase.from('monthly_reviews').update(payload).eq('id', activeReview.id).select().single());
+    } else {
+      ({ data: result } = await supabase.from('monthly_reviews')
+        .upsert(payload, { onConflict: 'employee_id,review_month' }).select().single());
     }
-    // multiple reviews per month are allowed - update only when editing an existing review
-    const query = editReview
-      ? supabase.from('monthly_reviews').update(payload).eq('id', editReview.id)
-      : supabase.from('monthly_reviews').insert(payload)
-    const { data: saved, error } = await query.select().single()
-    if (error) { alert('Save failed: ' + error.message); setSaving(false); return }
-    if (!editReview && form.review_template === 'detailed' && saved) {
-      const autoPoints = generateActionPoints(a)
-      if (autoPoints.length > 0) {
-        await supabase.from('review_action_points').insert(
-          autoPoints.map(p => ({ review_id: saved.id, employee_id: selected.id, ...p, status: 'Open', auto_generated: true }))
-        )
-      }
+    if (result) {
+      const r = result as MonthlyReview;
+      setReviews(rs => rs.find(x => x.id === r.id) ? rs.map(x => x.id === r.id ? r : x) : [r, ...rs]);
+      setActiveReview(r); setMode('history');
     }
-    const { data } = await supabase.from('monthly_reviews').select('*')
-      .eq('employee_id', selected.id).order('review_month', { ascending: false }).order('created_at', { ascending: false })
-    setReviews((data ?? []) as Review[])
-    setShowForm(false)
-    if (saved?.id) setApReviewId(saved.id)
-    setSaving(false)
-  }, [form, selected, editReview])
-
-  const F = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setForm(f => ({ ...f, [k]: e.target.value }))
-
-  const filtered = employees.filter(e =>
-    e.name.toLowerCase().includes(search.toLowerCase()) ||
-    (e.role ?? '').toLowerCase().includes(search.toLowerCase())
-  )
-
-  function formatMonth(s: string) {
-    const d = new Date(s); return MONTHS[d.getMonth()] + ' ' + d.getFullYear()
+    setSaving(false);
   }
 
-  function toggleScores(id: string) {
-    setExpandedScores(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
-  }
+  // Managers only see their direct + indirect reports; admin sees all
+  const visibleEmployees = useMemo(() => {
+    if (!managerName) return employees;
+    return getReports(employees, managerName);
+  }, [employees, managerName]);
 
-  function reviewAnswers(r: Review): Record<string, string|null|undefined> {
-    return {
-      role_fitment: r.role_fitment, delivery: r.delivery, quality_speed: r.quality_speed,
-      updating_skills: r.updating_skills, ownership: r.ownership, accountability: r.accountability,
-      critical_thinking: r.critical_thinking, innovation: r.innovation,
-      independent: r.independent, critical_situations: r.critical_situations,
-      client_mgmt: r.client_mgmt, client_professional: r.client_professional,
-      professional_attitude: r.professional_attitude, team_morale: r.team_morale,
-    }
-  }
+  const filteredEmps = visibleEmployees.filter(e => {
+    const q = search.toLowerCase();
+    return !q || e.name.toLowerCase().includes(q) || (e.role ?? '').toLowerCase().includes(q);
+  });
 
   return (
     <div className="flex h-[calc(100vh-56px)] overflow-hidden">
-      <div className="w-[300px] border-r flex flex-col bg-gray-50 shrink-0">
-        <div className="p-3 border-b bg-white">
+      <div className="w-64 border-r bg-gray-50 flex flex-col shrink-0">
+        <div className="p-3 border-b">
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search employees\u2026" className="w-full px-3 py-1.5 text-sm border rounded-lg" />
+            placeholder="🔍 Search employee…"
+            className="w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white" />
         </div>
-        <div className="flex-1 overflow-y-auto">
-          {loading ? <div className="p-4 text-sm text-gray-400">Loading\u2026</div> :
-            filtered.map(emp => (
-              <button key={emp.id} onClick={() => selectEmployee(emp)}
-                className={'w-full text-left px-4 py-3 border-b hover:bg-white transition-colors ' +
-                  (selected?.id === emp.id ? 'bg-white border-l-4 border-l-blue-500' : '')}>
-                <div className="text-sm font-medium text-gray-900 truncate">{emp.name}</div>
-                <div className="text-xs text-gray-400 truncate">{emp.role} \u00b7 {emp.dept}</div>
-              </button>
-            ))
-          }
+        <div className="overflow-auto flex-1">
+          {filteredEmps.map(emp => (
+            <button key={emp.id} onClick={() => selectEmployee(emp)}
+              className={cn('w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-white transition-colors border-b border-gray-100',
+                selected?.id === emp.id ? 'bg-white border-l-2 border-l-blue-600' : '')}>
+              <Avatar name={emp.name} photoUrl={emp.photo_url} size="sm" />
+              <div className="min-w-0">
+                <div className="text-sm font-medium truncate">{emp.name}</div>
+                <div className="text-xs text-gray-400 truncate">{emp.role}</div>
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {!selected ? (
-          <div className="flex-1 flex items-center justify-center text-gray-300 text-sm">
-            Select an employee to view reviews
+      {!selected ? (
+        <div className="flex-1 flex items-center justify-center text-gray-400">
+          <div className="text-center">
+            <div className="text-5xl mb-3">📋</div>
+            <p className="text-sm">Select an employee to view or add monthly reviews</p>
           </div>
-        ) : (
-          <>
-            <div className="bg-white border-b px-6 py-4 flex items-center justify-between shrink-0">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">{selected.name}</h2>
-                <div className="text-xs text-gray-400">{selected.role} \u00b7 {selected.dept}</div>
+        </div>
+      ) : (
+        <div className="flex-1 flex overflow-hidden">
+          <div className="w-72 border-r flex flex-col bg-white shrink-0">
+            <div className="p-4 border-b">
+              <div className="flex items-center gap-3 mb-3">
+                <Avatar name={selected.name} photoUrl={selected.photo_url} size="md" />
+                <div>
+                  <div className="font-semibold text-sm">{selected.name}</div>
+                  <div className="text-xs text-gray-400">{selected.role}</div>
+                </div>
               </div>
-              <button onClick={startNew} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg font-semibold hover:bg-blue-700">
+              <button onClick={startNewReview}
+                className="w-full py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 font-medium">
                 + New Monthly Review
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6">
-              {showForm ? (
-                <div className="bg-white rounded-xl border shadow-sm p-6 max-w-2xl">
-                  <h3 className="text-base font-bold mb-4">{editReview ? 'Edit' : 'New'} Review \u2014 {selected.name}</h3>
-                  <DetailedTemplate key={formKey} initialTemplate={form.review_template}
-                    initialAnswers={form.detailed_answers}
-                    onDataChange={(template, data) => setForm(f => ({ ...f, review_template: template, detailed_answers: data }))}
-                  />
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div>
-                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Month</label>
-                      <select value={form.sel_month} onChange={F('sel_month')} className="w-full px-3 py-2 text-sm border rounded-lg bg-white">
-                        {MONTHS.map((m,i) => <option key={m} value={i+1}>{m}</option>)}
-                      </select>
+            <div className="text-xs font-semibold text-gray-400 px-4 py-2 uppercase tracking-wide">Review History</div>
+            <div className="overflow-auto flex-1">
+              {loading && <div className="p-4 text-sm text-gray-400">Loading…</div>}
+              {!loading && reviews.length === 0 && (
+                <div className="p-4 text-sm text-gray-400 text-center">No reviews yet.</div>
+              )}
+              {reviews.map(r => (
+                <button key={r.id} onClick={() => { setActiveReview(r); setMode('history'); }}
+                  className={cn('w-full text-left px-4 py-3 border-b hover:bg-blue-50 transition-colors',
+                    activeReview?.id === r.id && mode === 'history' ? 'bg-blue-50 border-l-2 border-l-blue-600' : '')}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-semibold">{monthLabel(r.review_month)}</span>
+                    <span className={cn('text-sm font-bold', scoreColor(r.score))}>{r.score?.toFixed(1) ?? '—'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={cn('text-xs px-1.5 py-0.5 rounded font-medium',
+                      r.score !== null
+                        ? r.score >= 2.5 ? 'bg-green-50 text-green-600' : r.score >= 1.8 ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-500'
+                        : 'text-gray-400')}>
+                      {scoreLabel(r.score)}
+                    </span>
+                    {r.mood && <span className="text-sm">{MOOD_OPTIONS.find(m => m.value === r.mood)?.emoji}</span>}
+                  </div>
+                  {r.project && <div className="text-xs text-gray-400 mt-0.5 truncate">{r.project}</div>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto">
+            {mode === 'history' && !activeReview && (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                <div className="text-center">
+                  <div className="text-4xl mb-2">📅</div>
+                  <p className="text-sm">Select a past review or click "+ New Monthly Review"</p>
+                </div>
+              </div>
+            )}
+
+            {mode === 'history' && activeReview && (
+              <div className="p-6 max-w-3xl">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-xl font-bold">{monthLabel(activeReview.review_month)} Review</h2>
+                    <p className="text-sm text-gray-500 mt-0.5">{selected.name} · {activeReview.project ?? 'No project'} · Manager: {activeReview.manager_name ?? '—'}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <div className={cn('text-3xl font-bold', scoreColor(activeReview.score))}>{activeReview.score?.toFixed(1) ?? '—'}</div>
+                      <div className={cn('text-xs font-medium', scoreColor(activeReview.score))}>{scoreLabel(activeReview.score)}</div>
                     </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Year</label>
-                      <select value={form.sel_year} onChange={F('sel_year')} className="w-full px-3 py-2 text-sm border rounded-lg bg-white">
-                        {YEARS.map(y => <option key={y}>{y}</option>)}
-                      </select>
+                    <button onClick={() => editReview(activeReview)}
+                      className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">✏️ Edit</button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mb-6">
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <div className="text-xs text-gray-400 mb-1">Mood</div>
+                    <div className="font-medium text-sm flex items-center gap-1">
+                      {MOOD_OPTIONS.find(m => m.value === activeReview.mood)?.emoji} {activeReview.mood || '—'}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <div className="text-xs text-gray-400 mb-1">Billable</div>
+                    <div className="font-medium text-sm">{activeReview.billable ? '✅ Yes' : '❌ No'}</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <div className="text-xs text-gray-400 mb-1">Score / 3.0</div>
+                    <div className={cn('font-bold text-sm', scoreColor(activeReview.score))}>{activeReview.score?.toFixed(2) ?? '—'}</div>
+                  </div>
+                </div>
+                {GROUPS.map(group => {
+                  const fields = RATING_FIELDS.filter(f => f.group === group);
+                  return (
+                    <div key={group} className="mb-5">
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{group}</h3>
+                      <div className="bg-white border rounded-xl overflow-hidden">
+                        {fields.map((f, i) => {
+                          const val = activeReview[f.key] as string;
+                          const opt = RATING_OPTIONS.find(o => o.value === val);
+                          return (
+                            <div key={f.key} className={cn('flex items-center justify-between px-4 py-2.5 text-sm', i < fields.length - 1 ? 'border-b' : '')}>
+                              <span className="text-gray-700 pr-4 leading-snug">{f.label}</span>
+                              {opt
+                                ? <span className={cn('text-xs px-2.5 py-0.5 rounded-full font-semibold border shrink-0', opt.color)}>{opt.label}</span>
+                                : <span className="text-gray-300 text-xs shrink-0">Not rated</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="grid sm:grid-cols-2 gap-4 mb-5">
+                  <div className="bg-blue-50 rounded-xl p-4">
+                    <div className="text-xs font-semibold text-blue-600 mb-2 uppercase tracking-wide">🎯 Targets</div>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{activeReview.targets || '—'}</p>
+                  </div>
+                  <div className="bg-green-50 rounded-xl p-4">
+                    <div className="text-xs font-semibold text-green-600 mb-2 uppercase tracking-wide">🏆 Achievements</div>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{activeReview.achievements || '—'}</p>
+                  </div>
+                </div>
+                {activeReview.overall_feedback && (
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <div className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">Overall Feedback</div>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{activeReview.overall_feedback}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {mode === 'form' && (
+              <div className="p-6 max-w-3xl">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-xl font-bold">{activeReview ? 'Edit Review' : 'New Monthly Review'}</h2>
+                    <p className="text-sm text-gray-500">{selected.name}</p>
+                  </div>
+                  <div className="text-center">
+                    <div className={cn('text-2xl font-bold', scoreColor(calcScore(form)))}>{calcScore(form)?.toFixed(1) ?? '—'}</div>
+                    <div className="text-xs text-gray-400">Live score / 3.0</div>
+                  </div>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 mb-5">
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Review Details</h3>
+                  <div className="grid sm:grid-cols-3 gap-3">
                     <div>
-                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Manager / Reviewer</label>
-                      <input value={form.manager_name} onChange={F('manager_name')} placeholder="Name" className="w-full px-3 py-2 text-sm border rounded-lg" />
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Review Month</label>
+                      <input type="month" value={reviewMonth.slice(0, 7)}
+                        onChange={e => setReviewMonth(e.target.value + '-01')}
+                        className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Manager Name</label>
+                      <input value={form.manager_name ?? ''} onChange={e => setForm(f => ({ ...f, manager_name: e.target.value }))}
+                        className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white" />
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-500 mb-1 block">Project</label>
-                      <input value={form.project} onChange={F('project')} placeholder="Current project" className="w-full px-3 py-2 text-sm border rounded-lg" />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Billable</label>
-                      <select value={form.billable ? 'Yes' : 'No'}
-                        onChange={e => setForm(f => ({ ...f, billable: e.target.value === 'Yes' }))}
-                        className="w-full px-3 py-2 text-sm border rounded-lg bg-white">
-                        {BILLABLE_OPTS.map(o => <option key={o}>{o}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Mood / Sentiment</label>
-                      <select value={form.mood} onChange={F('mood')} className="w-full px-3 py-2 text-sm border rounded-lg bg-white">
-                        {MOOD_OPTS.map(o => <option key={o}>{o}</option>)}
-                      </select>
+                      <input value={form.project ?? ''} onChange={e => setForm(f => ({ ...f, project: e.target.value }))}
+                        className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white" />
                     </div>
                   </div>
-                  <div className="mb-3">
-                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Targets / Goals</label>
-                    <textarea value={form.targets} onChange={F('targets')} rows={2} placeholder="Goals\u2026" className="w-full px-3 py-2 text-sm border rounded-lg resize-none" />
-                  </div>
-                  <div className="mb-3">
-                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Achievements</label>
-                    <textarea value={form.achievements} onChange={F('achievements')} rows={2} placeholder="Key achievements\u2026" className="w-full px-3 py-2 text-sm border rounded-lg resize-none" />
-                  </div>
-                  <div className="mb-4">
-                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Overall Feedback</label>
-                    <textarea value={form.overall_feedback} onChange={F('overall_feedback')} rows={3} placeholder="Overall feedback\u2026" className="w-full px-3 py-2 text-sm border rounded-lg resize-none" />
-                  </div>
-                  <div className="flex gap-3">
-                    <button onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
-                    <button onClick={saveReview} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
-                      {saving ? 'Saving\u2026' : 'Save Review'}
-                    </button>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer mt-3">
+                    <input type="checkbox" checked={form.billable ?? true}
+                      onChange={e => setForm(f => ({ ...f, billable: e.target.checked }))}
+                      className="w-4 h-4 rounded" />
+                    Billable resource this month
+                  </label>
+                </div>
+                <div className="mb-5">
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Overall Mood / Pulse</h3>
+                  <div className="flex gap-2 flex-wrap">
+                    {MOOD_OPTIONS.map(m => (
+                      <button key={m.value} onClick={() => setForm(f => ({ ...f, mood: m.value }))}
+                        className={cn('px-4 py-2 rounded-xl text-sm font-medium border transition-all',
+                          form.mood === m.value ? m.color + ' ring-2 ring-offset-1 ring-blue-400' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-400')}>
+                        {m.emoji} {m.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              ) : reviews.length === 0 ? (
-                <div className="text-center py-12 text-gray-300 text-sm">No reviews yet \u2014 click + New Monthly Review</div>
-              ) : (
-                <div className="space-y-3 max-w-2xl">
-                  {reviews.map((r, idx) => {
-                    const prevScore = reviews[idx + 1]?.composite_score
-                    const trend = r.composite_score != null ? calculateTrend(r.composite_score, prevScore) : null
-                    const isApOpen = apReviewId === r.id
-                    const isScoreExpanded = expandedScores.has(r.id)
-                    const ans = reviewAnswers(r)
-                    return (
-                      <div key={r.id} className="bg-white rounded-xl border hover:shadow-sm transition-shadow">
-                        <div className="p-4">
-                          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-gray-900 text-sm">{formatMonth(r.review_month)}</span>
-                              {r.composite_score != null && <ScoreBadge score={r.composite_score} />}
-                              {trend && <TrendBadge trend={trend} />}
-                            </div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {r.review_template === 'detailed' && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">Detailed</span>}
-                              {r.mood && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{r.mood}</span>}
-                              {r.composite_score != null && (
-                                <button onClick={() => toggleScores(r.id)} className="text-xs text-indigo-500 hover:underline">
-                                  {isScoreExpanded ? 'Hide scores' : 'View scores'}
+                {GROUPS.map(group => {
+                  const fields = RATING_FIELDS.filter(f => f.group === group);
+                  return (
+                    <div key={group} className="mb-5">
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{group}</h3>
+                      <div className="bg-white border rounded-xl overflow-hidden">
+                        {fields.map((f, i) => (
+                          <div key={f.key} className={cn('px-4 py-3', i < fields.length - 1 ? 'border-b' : '')}>
+                            <div className="text-sm text-gray-700 mb-2 leading-snug">{f.label}</div>
+                            <div className="flex gap-2 flex-wrap">
+                              {RATING_OPTIONS.map(opt => (
+                                <button key={opt.value} onClick={() => setR(f.key)(opt.value)}
+                                  className={cn('px-3 py-1 text-xs rounded-full border font-medium transition-all',
+                                    form[f.key] === opt.value ? opt.color + ' ring-2 ring-offset-1 ring-blue-300' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-400')}>
+                                  {opt.label}
                                 </button>
-                              )}
-                              <button onClick={() => setApReviewId(isApOpen ? null : r.id)}
-                                className={`text-xs px-2 py-0.5 rounded-full font-medium transition-colors ${
-                                  isApOpen ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500 hover:bg-amber-50 hover:text-amber-600'
-                                }`}>
-                                {isApOpen ? 'Close action points \u25b2' : 'Action points \u25bc'}
-                              </button>
-                              <button onClick={() => startEdit(r)} className="text-xs text-blue-600 hover:underline">Edit</button>
-                            </div>
-                          </div>
-                          {r.manager_name && <div className="text-xs text-gray-400">Reviewed by {r.manager_name}</div>}
-                          {r.overall_feedback && <div className="text-sm text-gray-600 mt-2 line-clamp-2">{r.overall_feedback}</div>}
-                          {isScoreExpanded && r.composite_score != null && (
-                            <div className="mt-3 pt-3 border-t border-gray-50">
-                              {CAT_FIELDS.map(cat => (
-                                <ScoreBar key={cat.label} label={cat.label} score={catScore(cat.fields, ans)} />
                               ))}
+                              {form[f.key] && (
+                                <button onClick={() => setR(f.key)('')} className="text-xs text-gray-300 hover:text-red-400 transition-colors">✕ clear</button>
+                              )}
                             </div>
-                          )}
-                        </div>
-                        {isApOpen && (
-                          <div className="px-4 pb-4">
-                            <ActionPoints reviewId={r.id} employeeId={r.employee_id} onClose={() => setApReviewId(null)} />
                           </div>
-                        )}
+                        ))}
                       </div>
-                    )
-                  })}
+                    </div>
+                  );
+                })}
+                <div className="grid sm:grid-cols-2 gap-4 mb-5">
+                  <div>
+                    <label className="text-xs font-semibold text-blue-600 mb-1 block">🎯 Targets (this month)</label>
+                    <textarea rows={4} value={form.targets ?? ''}
+                      onChange={e => setForm(f => ({ ...f, targets: e.target.value }))}
+                      placeholder="What were the agreed targets for this period?"
+                      className="w-full px-3 py-2 text-sm border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-400 resize-none bg-blue-50" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-green-600 mb-1 block">🏆 Achievements</label>
+                    <textarea rows={4} value={form.achievements ?? ''}
+                      onChange={e => setForm(f => ({ ...f, achievements: e.target.value }))}
+                      placeholder="What did the employee achieve against those targets?"
+                      className="w-full px-3 py-2 text-sm border border-green-200 rounded-xl focus:ring-2 focus:ring-blue-400 resize-none bg-green-50" />
+                  </div>
                 </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+                <div className="mb-6">
+                  <label className="text-xs font-semibold text-gray-500 mb-1 block">Overall Feedback (Strengths / Improvements)</label>
+                  <textarea rows={4} value={form.overall_feedback ?? ''}
+                    onChange={e => setForm(f => ({ ...f, overall_feedback: e.target.value }))}
+                    placeholder="Summarise strengths, areas for improvement, and any other notes…"
+                    className="w-full px-3 py-2 text-sm border rounded-xl focus:ring-2 focus:ring-blue-400 resize-none" />
+                </div>
+                <div className="flex gap-3 pb-8">
+                  <button onClick={saveReview} disabled={saving}
+                    className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                    {saving ? 'Saving…' : '✓ Save Review'}
+                  </button>
+                  <button onClick={() => setMode('history')}
+                    className="px-5 py-2.5 border rounded-xl text-sm text-gray-600 hover:bg-gray-50">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
-  )
+  );
 }
