@@ -1,0 +1,162 @@
+/**
+ * HTML → PDF renderer (headless Chromium) for the employment contract.
+ *
+ * Renders the exact HTML the user edited in the "Preview & Edit" step so that free-typed
+ * edits persist into the signed PDF, and header/footer/margins/alignment come from CSS.
+ *
+ * Chromium binary resolution:
+ *   • LOCAL / CI (this container): a full Chromium ships at $PLAYWRIGHT_BROWSERS_PATH
+ *     (symlink .../chromium). Set LOCAL_CHROMIUM_PATH to override explicitly.
+ *   • Vercel serverless: puppeteer-core + @sparticuz/chromium.
+ *
+ * Signature anchors: after layout, the two embedded markers (.sig-anchor[data-role]) are
+ * measured with getBoundingClientRect and mapped to Zoho Sign page-index + point coords
+ * using the shared LAYOUT geometry. The renderer's viewport width is set to the printed
+ * content-box width so the measured on-screen layout matches the paginated print layout.
+ */
+import fs from 'fs';
+import { LAYOUT, PT_PER_PX, contentWidthPx, headerTemplateHtml, footerTemplateHtml } from './contract-layout';
+
+export interface RenderedAnchor {
+  role: 'company' | 'employee';
+  page: number; // 0-based page index
+  xFromLeft: number; // PDF points from the left edge of the page
+  yFromTop: number; // PDF points from the top edge of the page
+}
+
+export interface RenderResult {
+  pdf: Buffer;
+  anchors: RenderedAnchor[];
+}
+
+/** Resolve a local Chromium binary if one is available (container / CI), else undefined. */
+function localChromiumPath(): string | undefined {
+  const candidates = [
+    process.env.LOCAL_CHROMIUM_PATH,
+    process.env.PLAYWRIGHT_BROWSERS_PATH ? `${process.env.PLAYWRIGHT_BROWSERS_PATH}/chromium` : undefined,
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.CHROME_PATH,
+  ].filter(Boolean) as string[];
+  for (const c of candidates) {
+    try { if (fs.existsSync(c)) return c; } catch { /* ignore */ }
+  }
+  return undefined;
+}
+
+async function launchBrowser() {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const puppeteer = require('puppeteer-core');
+  const local = localChromiumPath();
+  if (local) {
+    return puppeteer.launch({
+      executablePath: local,
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none'],
+    });
+  }
+  // Serverless (Vercel) path.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const chromium = require('@sparticuz/chromium');
+  return puppeteer.launch({
+    args: [...chromium.args, '--font-render-hinting=none'],
+    executablePath: await chromium.executablePath(),
+    headless: chromium.headless,
+    defaultViewport: chromium.defaultViewport,
+  });
+}
+
+/** Wrap an edited-HTML fragment (which already carries its own <style>) into a document. */
+function wrapDocument(fragment: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8"/></head><body>${fragment}</body></html>`;
+}
+
+export async function renderContractPdf(editedHtml: string): Promise<RenderResult> {
+  const browser = await launchBrowser();
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: contentWidthPx(), height: 1400, deviceScaleFactor: 1 });
+    await page.setContent(wrapDocument(editedHtml), { waitUntil: 'networkidle0' });
+    // Measure against PRINT styles (inline header/footer removed from flow, matching the PDF).
+    await page.emulateMediaType('print');
+    await page.evaluate(async () => { try { await (document as any).fonts.ready; } catch { /* ignore */ } });
+
+    // Content-area height per printed page, in device px.
+    const contentHeightPx = (LAYOUT.pageHpt - LAYOUT.marginTopPt - LAYOUT.marginBottomPt) / PT_PER_PX;
+
+    // Measure anchor markers AND all forced-break sections in the (unpaginated) print layout.
+    const measured: {
+      sections: number[];
+      anchors: Array<{ role: string; markerTop: number; markerLeft: number; sectionTop: number | null }>;
+    } = await page.evaluate(() => {
+      const yOf = (el: Element) => el.getBoundingClientRect().top + window.scrollY;
+      const sections = (Array.from(document.querySelectorAll('.sec-break')) as HTMLElement[])
+        .map(yOf).sort((a, b) => a - b);
+      const anchors = (Array.from(document.querySelectorAll('.sig-anchor[data-role]')) as HTMLElement[]).map(m => {
+        const r = m.getBoundingClientRect();
+        let sectionTop: number | null = null;
+        let el: HTMLElement | null = m;
+        while (el) {
+          if (el.classList && el.classList.contains('sec-break')) { sectionTop = yOf(el); break; }
+          el = el.parentElement;
+        }
+        return { role: m.getAttribute('data-role') || '', markerTop: r.top + window.scrollY, markerLeft: r.left + window.scrollX, sectionTop };
+      });
+      return { sections, anchors };
+    });
+
+    // Print page index of each forced-break section. Each .sec-break starts a fresh page, so
+    // walking them in order and adding the pages consumed by the content between successive
+    // breaks yields the true 0-based page index — robust to free-typed edits changing where
+    // the earlier body paginates. (Approximation limited to auto-break slack in the flowing
+    // body before the FIRST break; the live Zoho test verifies final placement.)
+    const H = contentHeightPx;
+    const sectionPage = new Map<number, number>();
+    const secs = measured.sections;
+    for (let i = 0; i < secs.length; i++) {
+      if (i === 0) {
+        sectionPage.set(secs[i], Math.max(0, Math.ceil(secs[i] / H)));
+      } else {
+        const gap = secs[i] - secs[i - 1];
+        const prevPage = sectionPage.get(secs[i - 1]) as number;
+        sectionPage.set(secs[i], prevPage + Math.max(1, Math.ceil(gap / H)));
+      }
+    }
+
+    const pdfUint8 = await page.pdf({
+      printBackground: true,
+      format: 'A4',
+      displayHeaderFooter: true,
+      headerTemplate: headerTemplateHtml(),
+      footerTemplate: footerTemplateHtml(),
+      margin: {
+        // Puppeteer's margin parser accepts px/in/cm/mm — not pt — so convert.
+        top: `${LAYOUT.marginTopPt / PT_PER_PX}px`,
+        bottom: `${LAYOUT.marginBottomPt / PT_PER_PX}px`,
+        left: `${LAYOUT.marginLeftPt / PT_PER_PX}px`,
+        right: `${LAYOUT.marginRightPt / PT_PER_PX}px`,
+      },
+    });
+    const pdf = Buffer.from(pdfUint8);
+
+    const anchors: RenderedAnchor[] = measured.anchors
+      .filter(a => a.role === 'company' || a.role === 'employee')
+      .map(a => {
+        let pageIndex: number;
+        let yWithinContentPx: number;
+        if (a.sectionTop != null && sectionPage.has(a.sectionTop)) {
+          pageIndex = sectionPage.get(a.sectionTop) as number;
+          yWithinContentPx = a.markerTop - a.sectionTop;
+        } else {
+          pageIndex = Math.max(0, Math.floor(a.markerTop / H));
+          yWithinContentPx = a.markerTop - pageIndex * H;
+        }
+        const yFromTop = LAYOUT.marginTopPt + yWithinContentPx * PT_PER_PX;
+        const xFromLeft = LAYOUT.marginLeftPt + a.markerLeft * PT_PER_PX;
+        return { role: a.role as 'company' | 'employee', page: pageIndex, xFromLeft, yFromTop };
+      });
+
+    return { pdf, anchors };
+  } finally {
+    await browser.close();
+  }
+}

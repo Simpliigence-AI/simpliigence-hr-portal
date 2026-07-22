@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { sendDocumentForSignature, getSigningStatus } from '@/lib/zoho-sign';
+import { sendDocumentForSignature, getSigningStatus, SignaturePlacement } from '@/lib/zoho-sign';
 import { generateOfferLetter, generateExperienceLetter, generateIncrementLetter } from '@/lib/letter-templates';
+import { renderContractPdf } from '@/lib/render-pdf';
+
+// Headless Chromium (HTML→PDF) needs the Node.js runtime, and rendering can take a few
+// seconds, so allow more time than the platform default.
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 function serverSupabase() {
   const cookieStore = cookies();
@@ -32,20 +38,38 @@ export async function GET(req: NextRequest) {
 // POST /api/documents  — generate + send for signature
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { employeeId, type, details, signerEmail, signerName } = body;
+  const { employeeId, type, details, signerEmail, signerName, editedHtml } = body;
 
   if (!employeeId || !type || !signerEmail || !signerName) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
-  // Generate PDF
+  // Generate PDF + signature placement
   let pdfBytes: Buffer;
   let title: string;
-  let signaturePage: number | undefined;
-  let signatureYFromTop: number | undefined;
+  let placement: SignaturePlacement | undefined;
   try {
     if (type === 'offer') {
-      ({ pdfBytes, title, signaturePage, signatureYFromTop } = await generateOfferLetter(details));
+      title = `Employment Contract - ${details?.employeeName ?? 'Employee'}`;
+      if (typeof editedHtml === 'string' && editedHtml.trim()) {
+        // Preferred path: render the exact HTML the user edited in the preview step, so
+        // free-typed edits persist and layout comes from CSS. Signature anchors are measured
+        // from the rendered document (robust to edits changing pagination).
+        const { pdf, anchors } = await renderContractPdf(editedHtml);
+        pdfBytes = pdf;
+        const emp = anchors.find(a => a.role === 'employee');
+        const cmp = anchors.find(a => a.role === 'company');
+        placement = {
+          employee: emp && { page: emp.page, yFromTop: emp.yFromTop, xFromLeft: emp.xFromLeft },
+          company:  cmp && { page: cmp.page, yFromTop: cmp.yFromTop, xFromLeft: cmp.xFromLeft },
+        };
+      } else {
+        // Fallback: legacy byte-builder when no edited HTML was supplied.
+        const r = await generateOfferLetter(details);
+        pdfBytes = r.pdfBytes;
+        title = r.title;
+        placement = { employee: { page: r.signaturePage, yFromTop: r.signatureYFromTop } };
+      }
     } else if (type === 'experience') {
       ({ pdfBytes, title } = await generateExperienceLetter(details));
     } else if (type === 'increment') {
@@ -60,15 +84,12 @@ export async function POST(req: NextRequest) {
   // Send to Zoho Sign
   let zohoResult;
   try {
-    const signatureLoc = (signaturePage !== undefined && signatureYFromTop !== undefined)
-      ? { page: signaturePage, yFromTop: signatureYFromTop }
-      : undefined;
     zohoResult = await sendDocumentForSignature(
       pdfBytes,
       `${title.replace(/\s+/g, '_')}.pdf`,
       title,
       { name: signerName, email: signerEmail },
-      signatureLoc,
+      placement,
     );
   } catch (e) {
     return NextResponse.json({ error: `Zoho Sign error: ${(e as Error).message}` }, { status: 500 });
