@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { defaultCTCRows, inrFmt, inrWords } from '@/lib/letter-templates';
 import type { CTCRow } from '@/lib/letter-templates';
+import { buildContractHtml } from '@/lib/contract-layout';
 
 /* ─── Types ────────────────────────────────────────────────────────────── */
 
@@ -168,155 +169,21 @@ function OfferLetterModal({
     .reduce((s, r) => s + r.annual, 0);
   const ctcMatchWarning = fixed > 0 && Math.abs(rowsTotal - fixed) > 10;
 
+  // Build the FULL styled contract (header/footer, margins, centered title, signature blocks
+  // and embedded signature anchors) via the shared layout module. This exact HTML is what the
+  // user edits in step 3 and what the backend renders to the signed PDF — true WYSIWYG.
   function buildPreviewHtml(): string {
-    const p = (text: string) => `<p style="margin:0 0 10px 0">${text}</p>`;
-    const h = (text: string) => `<p style="margin:14px 0 4px 0;font-weight:bold">${text}</p>`;
-    const indent = (text: string) => `<p style="margin:0 0 8px 0;padding-left:24px">${text}</p>`;
-
-    const ctcRows = rows.filter(r => !r.isSpacer && r.id !== 'fixed_total').map(r => `
-      <tr ${r.bold ? 'style="font-weight:bold"' : ''}>
-        <td style="border:1px solid #ccc;padding:4px 6px">${r.label}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;text-align:right">${r.id === 'variable' ? '—' : inrFmt(Math.round(r.annual/12))}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;text-align:right">${inrFmt(r.annual)}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;font-size:8pt">${r.remarks}</td>
-      </tr>`).join('');
-
-    return `
-<div style="font-family:'Times New Roman',serif;font-size:11pt;line-height:1.6;color:#111;max-width:700px;margin:0 auto;padding:24px">
-
-  <!-- LETTERHEAD -->
-  <div style="text-align:center;margin-bottom:4px">
-    <div style="font-size:16pt;font-weight:bold">SIMPLIIGENCE PRIVATE LIMITED</div>
-    <div style="font-size:8.5pt">Technology Consulting &nbsp;|&nbsp; Salesforce &nbsp;|&nbsp; AI/ML &nbsp;|&nbsp; GCC Advisory</div>
-    <div style="font-size:8.5pt">No. 179/1, 10th-A Main Road, Indiranagar 2nd Stage, Bangalore, India - 560038</div>
-  </div>
-  <hr style="border:0;border-top:1.5px solid #111;margin:8px 0 20px 0"/>
-
-  <h2 style="text-align:center;font-size:14pt;margin:0 0 18px 0">EMPLOYMENT CONTRACT</h2>
-
-  ${p(`This Employment Contract is made at Bangalore, Karnataka and effective this <strong>${contractDt}</strong>.`)}
-
-  ${p(`BETWEEN: <strong>${empName}</strong> (the "Employee"), an Indian Resident residing at: ${empAddr || '<em>[address not entered]</em>'}`)}
-  ${indent('The Party to the First part')}
-
-  ${p(`AND: <strong>Simpliigence Private Limited</strong> (the "Company"), a Private Limited Company having its registered office at: No. 179/1, 10th-A Main Road, Indiranagar 2nd Stage, Bangalore, India - 560038.`)}
-  ${indent('The Party to the Second part')}
-
-  ${p('(Collectively referred to as "Parties")')}
-
-  ${p(`This Contract is entered by the Parties after the issue of appointment letter or execution of the employment contract dated <strong>${joiningDt}</strong>.`)}
-
-  ${p(`WHEREAS the Company desires to employ the Party to the First Part and the said Party desires to be employed/appointed by the Company in employment for the post of a <strong>${desig}</strong>.`)}
-
-  <hr style="margin:14px 0"/>
-  <p style="font-weight:bold;font-size:12pt;margin:0 0 6px 0">Employee Service Conditions:</p>
-  ${p('Following are the terms and conditions associated with your employment:')}
-  ${p(`"Company" or "Simpliigence" for all purposes shall mean Simpliigence Private Limited`)}
-  ${p(`"You" or "Candidate" for all purposes shall mean <strong>${empName}</strong>`)}
-
-  ${h('Remuneration:')}
-  ${p(`Your annual Gross salary/CTC will be Rs ${inrFmt(fixed)}/- (Rupees ${inrWords(fixed)}).${variable > 0 ? ` In addition, you will be eligible for a variable component of Rs ${inrFmt(variable)}/- (Rupees ${inrWords(variable)}) subject to Company policies and performance.` : ''} Any additional allowances, incentives and other benefits of your employment will be as per Company policies as applicable from time to time and based on performance, as may be mutually decided by the Company and the Candidate.`)}
-  ${p('Your CTC includes and will continue to include all statutory liability and taxes applicable to you as an employee from time to time.')}
-  ${p('A breakup of your tentative CTC is detailed under Appendix – A to this contract which is subject to change.')}
-  ${p('This is a position of continuous responsibility and does not entail payment of extra time or overtime.')}
-
-  ${h('Period of Probation:')}
-  ${p("Your tenure with the Company will commence with a probationary period lasting up to Six months. Throughout this time, it is imperative that you substantiate your suitability for the assigned position to the Company's contentment. The Company holds the discretionary authority to either terminate or extend your probation period, contingent upon your performance and occupational adeptness in the designated role.")}
-  ${p("During the probationary phase, the Company retains the prerogative to adjust your compensation or withhold salary should your performance fail to meet expectations. Post the probationary term, a comprehensive evaluation will be conducted based on your execution of assigned tasks, fulfilment of roles, and adherence to responsibilities. The Company will then make a determination regarding the continuation or cessation of your employment. It is emphasized that the Company reserves the right to modify the agreed-upon payment terms in response to unsatisfactory performance.")}
-
-  ${h('Place of Employment:')}
-  ${p(`The Candidate's initial place of posting/employment will be in <strong>${place}</strong> and the Candidate shall have to travel to different cities during the tenure of his/her employment. You may be required to travel on Company work, and you will be reimbursed expenses as per Company policies.`)}
-  ${p("Your travel/conveyance allowance/reimbursement is strictly between yourself and the Company. It has been determined to be claimed based on actual expenses as preapproved by your manager.")}
-
-  ${h('Training and Development:')}
-  ${p("During the course of your employment, to enable you to discharge your duties efficiently, Company may invest in you by providing you specialized and/or certified job-related training. If you choose to separate from the Company after undergoing the training (before a minimum period of 12 months), Company has the right to recover any expenses expended on your training. Such training and development costs shall not exceed 5% of the total CTC with a cap of Rs 50,000/- annually.")}
-
-  ${h('Confidentiality Clause:')}
-  ${p('The Candidate recognizes and acknowledges that the system, business materials, marketing strategies, operational planning, product/service pricing policies, client details, salary, revenues, user information, software knowledge and all system documentation relating thereto ("Proprietary Information") which Company owns, plans or develops, whether for its own use or for use by its clients or relating thereto are confidential and proprietary to the Company.')}
-
-  ${h('Non-Disclosure Clause:')}
-  ${p("The Candidate agrees that, except as directed by the Company, the Candidate will not at any time, whether during or after his/her employment with the Company, disclose to any person or use any confidential information, or permit any person to examine and/or make copies of any documents which contain or are derived from Confidential Information, whether prepared by the Candidate or otherwise coming into the Candidate's possession or control without the prior written permission of the Company.")}
-
-  ${h('Termination of Contract:')}
-  ${p("The Candidate shall serve a notice period of <strong>60 Days</strong> for/before separating from the Company's services.")}
-  ${p("The Company and the Candidate acknowledge and agree that the serving of notice for leaving the service of the Company is essence of the Contract and shall be strictly adhered to.")}
-  ${p("Upon your resignation or retirement from the company or termination of your services, you are required to return all assets and properties of the Company such as systems, business materials, documents, correspondence, machines, data, files, books etc.")}
-  ${p("In special cases or projects assignments, you may be required to provide telephonic support or project support at a mutually convenient time and place for a term of additional 30 (Thirty) days beyond the 60 days' notice period.")}
-
-  ${h('Non-Compete:')}
-  ${p('As per the terms and conditions discussed and confirmed, you cannot take any other employment or any other contract work, directly or indirectly, for and from any of "Simpliigence clients" or "clients of Simpliigence clients" for a period of <strong>3 years</strong> after leaving the job or termination of your job. In case you render your service to any such client within 1 year, Simpliigence will have the right to take legal action for any claims or damages.')}
-
-  ${h('Non-Solicitation:')}
-  ${p('For a period of <strong>5 years</strong> after termination of this employment, you shall not:')}
-  ${indent('(a) Solicit or take away from the Company the business of any customers or clients of the Company; OR')}
-  ${indent('(b) Entice away from the Company any person who at any time during such period shall have been an employee of the Company.')}
-
-  ${h('Exclusive Employment:')}
-  ${p('During your employment with the Company, you shall devote your time and attention exclusively to the duties entrusted to you and shall not engage directly or indirectly to work for any other person, firm or company in any capacity whatsoever, either part time, consultation or on job-to-job basis, without obtaining prior written permission of the Chairman of the Board of Directors.')}
-
-  ${h('Working Hours:')}
-  ${p('The Company reserves the right to modify or alter its working hours, and you may be required to work in shifts. Working hours will be decided by the Company management from time to time keeping the Client requirements in mind.')}
-
-  ${h('Appraisals:')}
-  ${p('There will be an appraisal conducted by your immediate supervisor or manager after your probation period of One month(s) with the Company, then on an annual basis. You are entitled to a salary hike only after completion of continuous One year of service, at the sole discretion of the Company.')}
-
-  ${h('Miscellaneous Provisions:')}
-  ${p('You will strictly adhere to the guidelines, policies and/or code of conduct of the Company pertaining to working hours, leaves, dress code, office cultures and conducts.')}
-  ${p('It is your responsibility to notify the Company of any changes in your personal information (address, contact phone number, qualifications, marital status, passport details etc.) within 15 working days.')}
-  ${p('You will abide by the Employee Service Conditions as enumerated above. Any of the terms and conditions of service may be modified, altered or changed at any time by the Company at its discretion.')}
-  ${p("You are required to sign and submit a copy of this employment contract as a token of your acceptance of Company's terms and conditions.")}
-
-  <hr style="margin:16px 0"/>
-  ${p('We once again welcome you to our team and look forward to your contribution towards success of the organization and yourself.')}
-  <p style="margin:4px 0">Thank You,</p>
-  <p style="margin:4px 0">Best Regards,</p>
-  <p style="margin:4px 0;font-weight:bold">For Simpliigence Private Limited</p>
-  <br/>
-  <p style="margin:4px 0">__________________</p>
-  <p style="margin:4px 0;font-weight:bold">Raghu Seetharam</p>
-  <p style="margin:4px 0">CEO</p>
-
-  <hr style="margin:20px 0"/>
-  <p style="font-weight:bold;font-size:12pt;margin:0 0 8px 0">Verified and Accepted:</p>
-  ${p(`I have read, understood and accepted the above Employee Service Conditions/Contract. I understand that the Employee Service Conditions are the basis of my employment with the Company. I am under no obligation or duress to accept these terms and conditions of employment; I accept them of my own free choice and will.`)}
-  <br/>
-  <p style="margin:4px 0">__________________</p>
-  <p style="margin:4px 0;font-weight:bold">${empName}</p>
-  <p style="margin:4px 0">Date: ${contractDt} &nbsp;&nbsp;&nbsp; Place: ${place}</p>
-
-  <!-- APPENDIX A -->
-  <div style="page-break-before:always;margin-top:32px">
-    <h2 style="text-align:center;font-size:13pt;margin:0 0 4px 0">Appendix – A</h2>
-    <p style="font-weight:bold;font-size:9pt;margin:0 0 14px 0">Potential Salary Structure for ${empName} — Simpliigence Private Limited, India</p>
-    <table style="width:100%;border-collapse:collapse;font-size:9pt">
-      <tr style="background:#f0f0f0;font-weight:bold">
-        <th style="border:1px solid #ccc;padding:5px 6px;text-align:left">Particulars of Salary</th>
-        <th style="border:1px solid #ccc;padding:5px 6px;text-align:right">Monthly (Rs.)</th>
-        <th style="border:1px solid #ccc;padding:5px 6px;text-align:right">Annually (Rs.)</th>
-        <th style="border:1px solid #ccc;padding:5px 6px;text-align:left">Remarks</th>
-      </tr>
-      <tr style="font-weight:bold">
-        <td style="border:1px solid #ccc;padding:4px 6px">FIXED CTC</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;text-align:right">${inrFmt(Math.round(fixed/12))}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;text-align:right">${inrFmt(fixed)}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px">Payable Monthly</td>
-      </tr>
-      ${ctcRows}
-      ${variable > 0 ? `<tr style="font-weight:bold"><td style="border:1px solid #ccc;padding:4px 6px">Variable Component **</td><td style="border:1px solid #ccc;padding:4px 6px;text-align:right">—</td><td style="border:1px solid #ccc;padding:4px 6px;text-align:right">${inrFmt(variable)}</td><td style="border:1px solid #ccc;padding:4px 6px;font-size:8pt">At discretion of Company</td></tr>` : ''}
-      <tr style="font-weight:bold;background:#f5f5f5">
-        <td style="border:1px solid #ccc;padding:5px 6px">TOTAL CTC</td>
-        <td style="border:1px solid #ccc;padding:5px 6px;text-align:right">${inrFmt(Math.round((fixed+variable)/12))}</td>
-        <td style="border:1px solid #ccc;padding:5px 6px;text-align:right">${inrFmt(fixed+variable)}</td>
-        <td style="border:1px solid #ccc;padding:5px 6px"></td>
-      </tr>
-    </table>
-    <p style="font-size:8.5pt;margin-top:10px">* Tax-free subject to bills submitted &nbsp;&nbsp; ** Variable at Company discretion; not a guaranteed right</p>
-    <br/>
-    <p style="font-weight:bold;margin:0 0 28px 0">UNDERSTOOD &amp; ACCEPTED:</p>
-    <p style="margin:4px 0">__________________</p>
-    <p style="margin:4px 0;font-weight:bold">${empName}</p>
-  </div>
-</div>`;
+    return buildContractHtml({
+      employeeName:      empName,
+      employeeAddress:   empAddr,
+      designation:       desig,
+      contractDate:      contractDt,
+      joiningDate:       joiningDt,
+      placeOfPosting:    place,
+      fixedAnnualCTC:    fixed,
+      variableAnnualCTC: variable,
+      rows,
+    });
   }
 
   async function send() {
@@ -324,6 +191,10 @@ function OfferLetterModal({
     if (!signerEmail) { setError('Signer email is required.'); return; }
     setSending(true);
     try {
+      // Capture the (possibly free-typed) edited document HTML so the signed PDF is rendered
+      // from exactly what the user sees/edited. Falls back to a fresh build if the editor
+      // was never mounted (e.g. step 3 skipped).
+      const editedHtml = editorRef.current?.innerHTML?.trim() || buildPreviewHtml();
       const r = await fetch('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -332,6 +203,7 @@ function OfferLetterModal({
           type: 'offer',
           signerEmail,
           signerName,
+          editedHtml,
           details: {
             employeeName:    empName,
             employeeAddress: empAddr,

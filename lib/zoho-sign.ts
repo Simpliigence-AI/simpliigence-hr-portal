@@ -97,14 +97,29 @@ export interface SignerInfo {
 }
 
 /**
- * Where to place the signature field on the document.
- * page: 0-based page index.
- * yFromTop: y coordinate in PDF points measured from the TOP of the page
- *           (Zoho Sign convention — 0 = top, increases downward).
+ * A single signature field placement.
+ * page:      0-based page index (matches the coordinates emitted by the HTML→PDF renderer
+ *            and by generateOfferLetter; Zoho's page_no is used 0-based here).
+ * yFromTop:  y coordinate in PDF points measured from the TOP of the page.
+ * xFromLeft: x coordinate in PDF points from the LEFT edge (defaults to ~108pt).
  */
-export interface SignatureLocation {
-  page:     number;
-  yFromTop: number;
+export interface SigField {
+  page:       number;
+  yFromTop:   number;
+  xFromLeft?: number;
+}
+
+/**
+ * Where to place signature field(s). `employee` is the recipient who receives the signing
+ * email. `company` is the CEO / counter-signature field; it is only added when a company
+ * signer email is configured via ZOHO_CEO_EMAIL (otherwise it is safely skipped so the
+ * employee-signing flow is never broken).
+ *
+ * Back-compat: a bare { page, yFromTop } is still accepted and treated as the employee field.
+ */
+export interface SignaturePlacement {
+  employee?: SigField;
+  company?:  SigField;
 }
 
 export interface SendForSignatureResult {
@@ -113,29 +128,54 @@ export interface SendForSignatureResult {
   signingUrl?: string;
 }
 
+const SIG_WIDTH  = 200;
+const SIG_HEIGHT = 45;
+
 export async function sendDocumentForSignature(
   pdfBytes:     Buffer,
   fileName:     string,
   requestName:  string,
   signer:       SignerInfo,
-  signatureLoc?: SignatureLocation,
+  placement?:   SignaturePlacement | SigField,
 ): Promise<SendForSignatureResult> {
   const token = await getZohoAccessToken();
+
+  // Normalise legacy { page, yFromTop } → { employee: {...} }.
+  const place: SignaturePlacement =
+    placement && 'employee' in (placement as SignaturePlacement)
+      ? (placement as SignaturePlacement)
+      : placement
+        ? { employee: placement as SigField }
+        : {};
+
+  // The company/CEO field is only added when a company signer email is configured.
+  const ceoEmail = process.env.ZOHO_CEO_EMAIL;
+  const ceoName  = process.env.ZOHO_CEO_NAME || 'Raghu Seetharam';
+  const includeCompany = !!(place.company && ceoEmail);
+
+  const recipients = [
+    {
+      recipient_name:   signer.name,
+      recipient_email:  signer.email,
+      action_type:      'SIGN' as const,
+      signing_order:    1,
+      verify_recipient: false,
+    },
+    ...(includeCompany ? [{
+      recipient_name:   ceoName,
+      recipient_email:  ceoEmail!,
+      action_type:      'SIGN' as const,
+      signing_order:    2,
+      verify_recipient: false,
+    }] : []),
+  ];
 
   const requestData = {
     requests: {
       request_name:    requestName,
       expiration_days: 30,
       is_sequential:   true,
-      actions: [
-        {
-          recipient_name:   signer.name,
-          recipient_email:  signer.email,
-          action_type:      'SIGN',
-          signing_order:    1,
-          verify_recipient: false,
-        },
-      ],
+      actions:         recipients,
     },
   };
 
@@ -181,55 +221,64 @@ export async function sendDocumentForSignature(
 
   const rawActions = req.actions as Array<Record<string, unknown>> | undefined;
   const actionId   = (rawActions?.[0]?.action_id as string) ?? '';
+  const ceoActionId = includeCompany ? ((rawActions?.[1]?.action_id as string) ?? '') : '';
 
-  console.log('[zoho-sign] Step 1 extracted:', { requestId, documentId, actionId });
-  if (!requestId || !documentId || !actionId) {
+  console.log('[zoho-sign] Step 1 extracted:', { requestId, documentId, actionId, ceoActionId, includeCompany });
+  if (!requestId || !documentId || !actionId || (includeCompany && !ceoActionId)) {
     throw new Error(
       `Zoho Sign Step 1 ID extraction failed — requestId="${requestId}", documentId="${documentId}", actionId="${actionId}" ` +
       `| response.requests keys: ${Object.keys(req).join(', ')} ` +
       `| document_ids: ${JSON.stringify(req.document_ids)} ` +
-      `| actions[0]: ${JSON.stringify(rawActions?.[0])}`,
+      `| actions: ${JSON.stringify(rawActions)}`,
     );
   }
 
-  // ── Step 1.5: Add a signature field via PUT /requests/{requestId} ────────
-  // Signature is an "image_field" in Zoho Sign (NOT sign_fields — that causes error 9004).
+  // ── Step 1.5: Add signature field(s) via PUT /requests/{requestId} ───────
+  // A signature is an "image_field" in Zoho Sign (NOT sign_fields — that causes error 9004).
   // Must be sent as application/x-www-form-urlencoded with data= prefix (NOT application/json).
   //
-  // Signature placement: use coordinates returned by the PDF builder (tracked at the exact
-  // position of the employee signature line in the "Verified and Accepted" section).
-  // Falls back to sensible defaults if no location is provided.
-  const sigPage  = signatureLoc?.page     ?? 2;    // page 3 (0-based) = "Verified & Accepted"
-  const sigY     = signatureLoc?.yFromTop ?? 700;  // near bottom of that page
+  // Placement uses coordinates measured from the rendered PDF: the employee field sits at the
+  // employee signature line, and (when a company signer is configured) the CEO field sits at
+  // the "For Simpliigence Private Limited" signature line. page_no is 0-based (matches the
+  // renderer / generateOfferLetter). Falls back to sensible defaults when no placement given.
+  const empField = place.employee ?? { page: 2, yFromTop: 700 };
+  const mkImageField = (
+    actId: string, name: string, f: SigField,
+  ) => ({
+    field_type_name: 'Signature',
+    document_id:     documentId,
+    action_id:       actId,
+    field_label:     name,
+    field_name:      name,
+    is_mandatory:    true,
+    x_coord:         Math.round(f.xFromLeft ?? 108),
+    y_coord:         Math.round(f.yFromTop),
+    abs_width:       SIG_WIDTH,
+    abs_height:      SIG_HEIGHT,
+    page_no:         f.page,
+  });
+
+  const fieldActions: Array<Record<string, unknown>> = [
+    {
+      action_id:       actionId,
+      recipient_name:  signer.name,
+      recipient_email: signer.email,
+      action_type:     'SIGN',
+      fields: { image_fields: [mkImageField(actionId, 'EmployeeSignature', empField)] },
+    },
+    ...(includeCompany ? [{
+      action_id:       ceoActionId,
+      recipient_name:  ceoName,
+      recipient_email: ceoEmail!,
+      action_type:     'SIGN',
+      fields: { image_fields: [mkImageField(ceoActionId, 'CompanySignature', place.company!)] },
+    }] : []),
+  ];
 
   const fieldsPayload = {
     requests: {
       request_name: requestName,
-      actions: [
-        {
-          action_id:       actionId,
-          recipient_name:  signer.name,
-          recipient_email: signer.email,
-          action_type:     'SIGN',
-          fields: {
-            image_fields: [
-              {
-                field_type_name: 'Signature',
-                document_id:     documentId,
-                action_id:       actionId,
-                field_label:     'Signature',
-                field_name:      'Signature1',
-                is_mandatory:    true,
-                x_coord:         50,
-                y_coord:         sigY,
-                abs_width:       200,
-                abs_height:      50,
-                page_no:         sigPage,
-              },
-            ],
-          },
-        },
-      ],
+      actions: fieldActions,
     },
   };
 
