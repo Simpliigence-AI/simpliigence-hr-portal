@@ -9,8 +9,11 @@
  *     (symlink .../chromium). Set LOCAL_CHROMIUM_PATH to override explicitly.
  *   • Vercel serverless: puppeteer-core + @sparticuz/chromium.
  *
- * Signature anchors: after layout, the two embedded markers (.sig-anchor[data-role]) are
- * measured with getBoundingClientRect and mapped to Zoho Sign page-index + point coords
+ * Signature anchors: after layout, every embedded marker (.sig-anchor[data-role]) is
+ * measured with getBoundingClientRect and mapped to Zoho Sign page-index + point coords.
+ * There are three: one `company` (CEO block) and two `employee` (the mid-doc "Verified and
+ * Accepted" block and the final "UNDERSTOOD & ACCEPTED" block). Both employee anchors belong
+ * to the SAME recipient and are returned in document order,
  * using the shared LAYOUT geometry. The renderer's viewport width is set to the printed
  * content-box width so the measured on-screen layout matches the paginated print layout.
  */

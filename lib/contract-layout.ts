@@ -416,7 +416,7 @@ ${contractFooterHtml()}
   <!-- ── Final understood & accepted ── -->
   <div class="sec-break sig-block" style="padding-top:16pt">
     <p class="verified" style="padding-left:0">UNDERSTOOD &amp; ACCEPTED:</p>
-    <div class="sig-space"></div>
+    <div class="sig-space"><span class="sig-anchor" data-role="employee"></span></div>
     <p class="sig-line">__________________</p>
     <p class="sig-name">${esc(d.employeeName)}</p>
   </div>
