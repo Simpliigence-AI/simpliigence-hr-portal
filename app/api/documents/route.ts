@@ -4,7 +4,7 @@ import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { sendDocumentForSignature, getSigningStatus } from '@/lib/zoho-sign';
+import { sendDocumentForSignature, getSigningStatus, SignaturePlacement } from '@/lib/zoho-sign';
 import { generateOfferLetter, generateExperienceLetter, generateIncrementLetter } from '@/lib/letter-templates';
 import { renderContractPdf } from '@/lib/render-pdf';
 
@@ -75,24 +75,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
-  // Generate PDF. Signature fields are placed by Zoho Sign via TEXT TAGS embedded in the
-  // document (automatic field detection) — no coordinate placement is computed or passed.
+  // Generate PDF + signature placement
   let pdfBytes: Buffer;
   let title: string;
+  let placement: SignaturePlacement | undefined;
   try {
     if (type === 'offer') {
       title = `Employment Contract - ${details?.employeeName ?? 'Employee'}`;
       if (typeof editedHtml === 'string' && editedHtml.trim()) {
         // Preferred path: render the exact HTML the user edited in the preview step, so
-        // free-typed edits persist and layout comes from CSS. The rendered PDF carries the
-        // Zoho Sign text tags at each signature line; Zoho detects and places the fields on
-        // upload, immune to pagination / edit drift.
-        pdfBytes = await renderContractPdf(editedHtml);
+        // free-typed edits persist and layout comes from CSS. Signature anchors are measured
+        // from the rendered document (robust to edits changing pagination).
+        const { pdf, anchors } = await renderContractPdf(editedHtml);
+        pdfBytes = pdf;
+        // There are TWO employee signature anchors (mid-doc "Verified and Accepted" + final
+        // "UNDERSTOOD & ACCEPTED"), both for the SAME recipient. Carry all of them.
+        const emps = anchors.filter(a => a.role === 'employee');
+        const cmp  = anchors.find(a => a.role === 'company');
+        placement = {
+          employees: emps.map(e => ({ page: e.page, yFromTop: e.yFromTop, xFromLeft: e.xFromLeft })),
+          company:   cmp && { page: cmp.page, yFromTop: cmp.yFromTop, xFromLeft: cmp.xFromLeft },
+        };
       } else {
         // Fallback: legacy byte-builder when no edited HTML was supplied.
         const r = await generateOfferLetter(details);
         pdfBytes = r.pdfBytes;
         title = r.title;
+        placement = { employee: { page: r.signaturePage, yFromTop: r.signatureYFromTop } };
       }
     } else if (type === 'experience') {
       ({ pdfBytes, title } = await generateExperienceLetter(details));
@@ -116,6 +125,7 @@ export async function POST(req: NextRequest) {
       `${title.replace(/\s+/g, '_')}.pdf`,
       title,
       { name: signerName, email: signerEmail },
+      placement,
     );
   } catch (e) {
     return NextResponse.json({ error: `Zoho Sign error: ${(e as Error).message}` }, { status: 500 });
