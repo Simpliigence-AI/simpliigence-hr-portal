@@ -110,16 +110,21 @@ export interface SigField {
 }
 
 /**
- * Where to place signature field(s). `employee` is the recipient who receives the signing
- * email. `company` is the CEO / counter-signature field; it is only added when a company
- * signer email is configured via ZOHO_CEO_EMAIL (otherwise it is safely skipped so the
- * employee-signing flow is never broken).
+ * Where to place signature field(s). The employee is the recipient who receives the signing
+ * email and may have MULTIPLE signature fields (the contract has two employee signature lines
+ * — the mid-doc "Verified and Accepted" block and the final "UNDERSTOOD & ACCEPTED" block —
+ * both signed by the same recipient). `company` is the CEO / counter-signature field; it is
+ * only added when a company signer email is configured via ZOHO_CEO_EMAIL (otherwise it is
+ * safely skipped so the employee-signing flow is never broken).
  *
- * Back-compat: a bare { page, yFromTop } is still accepted and treated as the employee field.
+ * `employees` carries the full list of employee fields. `employee` (singular) is retained for
+ * back-compat and, when present, is appended to the list.
+ * Back-compat: a bare { page, yFromTop } is still accepted and treated as a single employee field.
  */
 export interface SignaturePlacement {
-  employee?: SigField;
-  company?:  SigField;
+  employees?: SigField[];
+  employee?:  SigField;
+  company?:   SigField;
 }
 
 export interface SendForSignatureResult {
@@ -140,13 +145,24 @@ export async function sendDocumentForSignature(
 ): Promise<SendForSignatureResult> {
   const token = await getZohoAccessToken();
 
-  // Normalise legacy { page, yFromTop } → { employee: {...} }.
+  // Normalise legacy bare { page, yFromTop } → { employee: {...} }. A SignaturePlacement is
+  // recognised by having any of the placement keys (employees/employee/company).
+  const isPlacement = (p: unknown): p is SignaturePlacement =>
+    !!p && typeof p === 'object' &&
+    ('employees' in (p as object) || 'employee' in (p as object) || 'company' in (p as object));
   const place: SignaturePlacement =
-    placement && 'employee' in (placement as SignaturePlacement)
-      ? (placement as SignaturePlacement)
+    isPlacement(placement)
+      ? placement
       : placement
         ? { employee: placement as SigField }
         : {};
+
+  // Collect all employee signature fields (list + optional legacy singular).
+  const employeeFields: SigField[] = [
+    ...(place.employees ?? []),
+    ...(place.employee ? [place.employee] : []),
+  ];
+  const empFields = employeeFields.length ? employeeFields : [{ page: 2, yFromTop: 700 }];
 
   // The company/CEO field is only added when a company signer email is configured.
   const ceoEmail = process.env.ZOHO_CEO_EMAIL;
@@ -241,7 +257,6 @@ export async function sendDocumentForSignature(
   // employee signature line, and (when a company signer is configured) the CEO field sits at
   // the "For Simpliigence Private Limited" signature line. page_no is 0-based (matches the
   // renderer / generateOfferLetter). Falls back to sensible defaults when no placement given.
-  const empField = place.employee ?? { page: 2, yFromTop: 700 };
   const mkImageField = (
     actId: string, name: string, f: SigField,
   ) => ({
@@ -258,13 +273,18 @@ export async function sendDocumentForSignature(
     page_no:         f.page,
   });
 
+  // The employee recipient gets ONE image_field per employee signature line (field names must
+  // be unique). All belong to the single employee action_id (Recipient1).
+  const employeeImageFields = empFields.map((f, i) =>
+    mkImageField(actionId, i === 0 ? 'EmployeeSignature' : `EmployeeSignature${i + 1}`, f));
+
   const fieldActions: Array<Record<string, unknown>> = [
     {
       action_id:       actionId,
       recipient_name:  signer.name,
       recipient_email: signer.email,
       action_type:     'SIGN',
-      fields: { image_fields: [mkImageField(actionId, 'EmployeeSignature', empField)] },
+      fields: { image_fields: employeeImageFields },
     },
     ...(includeCompany ? [{
       action_id:       ceoActionId,

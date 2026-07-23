@@ -88,11 +88,13 @@ export async function POST(req: NextRequest) {
         // from the rendered document (robust to edits changing pagination).
         const { pdf, anchors } = await renderContractPdf(editedHtml);
         pdfBytes = pdf;
-        const emp = anchors.find(a => a.role === 'employee');
-        const cmp = anchors.find(a => a.role === 'company');
+        // There are TWO employee signature anchors (mid-doc "Verified and Accepted" + final
+        // "UNDERSTOOD & ACCEPTED"), both for the SAME recipient. Carry all of them.
+        const emps = anchors.filter(a => a.role === 'employee');
+        const cmp  = anchors.find(a => a.role === 'company');
         placement = {
-          employee: emp && { page: emp.page, yFromTop: emp.yFromTop, xFromLeft: emp.xFromLeft },
-          company:  cmp && { page: cmp.page, yFromTop: cmp.yFromTop, xFromLeft: cmp.xFromLeft },
+          employees: emps.map(e => ({ page: e.page, yFromTop: e.yFromTop, xFromLeft: e.xFromLeft })),
+          company:   cmp && { page: cmp.page, yFromTop: cmp.yFromTop, xFromLeft: cmp.xFromLeft },
         };
       } else {
         // Fallback: legacy byte-builder when no edited HTML was supplied.

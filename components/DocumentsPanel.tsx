@@ -131,6 +131,11 @@ function OfferLetterModal({
   // Step 3 — Preview (full-document contentEditable — edits flow to PDF via state callbacks)
   const editorRef = useRef<HTMLDivElement>(null);
   const [previewKey, setPreviewKey] = useState(0); // bump to force preview re-render
+  // Captured HTML of the (possibly free-typed) contentEditable preview. Held in state so it
+  // survives the step 3→4 unmount of the editor subtree — the Send button lives in step 4,
+  // and reading editorRef there returns null. Kept in sync via onInput while step 3 is mounted,
+  // seeded when the preview is (re)built, and snapshotted on the 3→4 transition.
+  const [editedHtml, setEditedHtml] = useState('');
 
   // Step 4 — Signer
   const [signerEmail, setSignerEmail] = useState(employee.email ?? '');
@@ -152,7 +157,10 @@ function OfferLetterModal({
   // We use innerHTML directly to avoid cursor-jump on every keystroke.
   useEffect(() => {
     if (step === 3 && editorRef.current) {
-      editorRef.current.innerHTML = buildPreviewHtml();
+      const html = buildPreviewHtml();
+      editorRef.current.innerHTML = html;
+      // Seed the captured value so an unedited "Looks Good →" still carries the full document.
+      setEditedHtml(html);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, previewKey]);
@@ -191,10 +199,12 @@ function OfferLetterModal({
     if (!signerEmail) { setError('Signer email is required.'); return; }
     setSending(true);
     try {
-      // Capture the (possibly free-typed) edited document HTML so the signed PDF is rendered
-      // from exactly what the user sees/edited. Falls back to a fresh build if the editor
-      // was never mounted (e.g. step 3 skipped).
-      const editedHtml = editorRef.current?.innerHTML?.trim() || buildPreviewHtml();
+      // Use the HTML captured while step 3 was still mounted (via onInput / the 3→4 snapshot),
+      // so free-typed edits persist even though the editor subtree has since unmounted. If the
+      // editor is somehow still mounted (defensive) prefer its live value; fall back to a fresh
+      // build only if nothing was ever captured (e.g. step 3 skipped entirely).
+      const capturedHtml =
+        editorRef.current?.innerHTML?.trim() || editedHtml.trim() || buildPreviewHtml();
       const r = await fetch('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -203,7 +213,7 @@ function OfferLetterModal({
           type: 'offer',
           signerEmail,
           signerName,
-          editedHtml,
+          editedHtml: capturedHtml,
           details: {
             employeeName:    empName,
             employeeAddress: empAddr,
@@ -376,6 +386,7 @@ function OfferLetterModal({
                   ref={editorRef}
                   contentEditable
                   suppressContentEditableWarning
+                  onInput={e => setEditedHtml(e.currentTarget.innerHTML)}
                   className="p-4 overflow-y-auto text-sm outline-none focus:ring-2 focus:ring-blue-200 focus:ring-inset"
                   style={{ minHeight: '520px', maxHeight: '60vh' }}
                 />
@@ -425,7 +436,14 @@ function OfferLetterModal({
 
           {step < 4 ? (
             <button
-              onClick={() => setStep(s => s + 1)}
+              onClick={() => {
+                // Final snapshot of the editor before its subtree unmounts on 3→4, so the
+                // captured HTML in send() reflects the very latest free-typed edits.
+                if (step === 3 && editorRef.current) {
+                  setEditedHtml(editorRef.current.innerHTML);
+                }
+                setStep(s => s + 1);
+              }}
               disabled={step === 2 && fixed <= 0}
               className="flex-1 bg-blue-600 text-white text-sm rounded-xl py-2.5 hover:bg-blue-700 disabled:opacity-50 font-medium">
               {step === 3 ? 'Looks Good →' : 'Next →'}
