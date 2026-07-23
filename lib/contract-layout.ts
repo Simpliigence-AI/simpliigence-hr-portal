@@ -106,9 +106,13 @@ export function contractCss(): string {
   .contract ol.sub { margin: 4pt 0; padding-left: 18pt; }
   .contract .indent { padding-left: 60pt !important; }
 
-  /* Signature blocks — left edge ~108pt = 18pt inside the 90pt page margin */
-  .sec-break { break-before: page; }
-  .sig-block { padding-left: 18pt; position: relative; }
+  /* Signature blocks — left edge ~108pt = 18pt inside the 90pt page margin.
+     Content flows continuously (no forced page breaks) so pages fill up; anchor
+     coordinates are measured post-render via getBoundingClientRect, so signature
+     pages adapt to wherever the content lands. Each discrete signature block uses
+     break-inside:avoid so a single block never splits across a page boundary — it
+     may still start mid-page. */
+  .sig-block { padding-left: 18pt; position: relative; break-inside: avoid; page-break-inside: avoid; }
   .sig-space { height: ${LAYOUT.sigFieldHeightPt}pt; }
   .sig-anchor { display: inline-block; width: 1px; height: 1px; overflow: hidden; }
   .sig-line { font-weight: 700; letter-spacing: 1px; margin: 0; }
@@ -123,6 +127,10 @@ export function contractCss(): string {
   /* Appendix table */
   .appendix-title { text-align: center; font-size: 13pt; font-weight: 700; margin: 10pt 0 14pt 0; }
   table.ctc { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  /* The salary table is ~a full page tall, so it flows (splits) across the page boundary
+     to keep content continuous rather than jumping whole to a fresh page and leaving a big
+     gap. Individual rows never split, so breaks land cleanly between rows. */
+  table.ctc tr { break-inside: avoid; page-break-inside: avoid; }
   table.ctc th, table.ctc td { border: 1px solid #333; padding: 4pt 6pt; vertical-align: top; }
   table.ctc .center { text-align: center; }
   table.ctc .bold { font-weight: 700; }
@@ -371,8 +379,8 @@ ${contractFooterHtml()}
     </li>
   </ol>
 
-  <!-- ── CEO / company signature block (own page) ── -->
-  <div class="sec-break">
+  <!-- ── CEO / company signature block (flows after the preceding clauses) ── -->
+  <div>
     <div class="body">
       <p>You are required to sign and submit a copy of this employment contract as a token of your acceptance of Company's terms and conditions.</p>
       <p>We once again welcome you to our team and look forward to your contribution towards success of the organization and yourself.</p>
@@ -392,8 +400,8 @@ ${contractFooterHtml()}
     <p class="accept-para">I have read, understood and accepted the above Employee Service Conditions/Contract. I understand that the Employee Service Conditions are the basis of my employment with the Company. I have also ensured that the Company has good prospects and is capable of offering me career growth. I am under no obligation or duress to accept these terms and conditions of employment; I accept them of my own free choice and will.</p>
   </div>
 
-  <!-- ── Employee signature block (top of next page) ── -->
-  <div class="sec-break">
+  <!-- ── Employee signature block (flows after the acceptance paragraph) ── -->
+  <div>
     <div class="sig-block">
       <div class="sig-space"><span class="sig-anchor" data-role="employee"></span></div>
       <p class="sig-line">__________________</p>
@@ -414,7 +422,7 @@ ${contractFooterHtml()}
   </div>
 
   <!-- ── Final understood & accepted ── -->
-  <div class="sec-break sig-block" style="padding-top:16pt">
+  <div class="sig-block" style="padding-top:16pt">
     <p class="verified" style="padding-left:0">UNDERSTOOD &amp; ACCEPTED:</p>
     <div class="sig-space"><span class="sig-anchor" data-role="employee"></span></div>
     <p class="sig-line">__________________</p>
