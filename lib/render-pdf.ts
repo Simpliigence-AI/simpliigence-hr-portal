@@ -43,25 +43,42 @@ function localChromiumPath(): string | undefined {
   return undefined;
 }
 
+/** True when running on Vercel / AWS Lambda. On these serverless platforms we MUST use the
+ *  @sparticuz/chromium bundle and never a local/custom executablePath — a stray CHROME_PATH
+ *  or PLAYWRIGHT_BROWSERS_PATH in the environment must not hijack the launch. */
+function isServerless(): boolean {
+  return Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+}
+
 async function launchBrowser() {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const puppeteer = require('puppeteer-core');
-  const local = localChromiumPath();
-  if (local) {
-    return puppeteer.launch({
-      executablePath: local,
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none'],
-    });
+
+  // LOCAL / CI ONLY: use a full local Chromium when one is available. Gated behind
+  // !isServerless() so this branch can never fire on Vercel — where it previously risked
+  // launching with a custom/undefined executablePath (the cause of the /tmp/chromium +
+  // missing-libnss3.so failure) instead of the @sparticuz bundle.
+  if (!isServerless()) {
+    const local = localChromiumPath();
+    if (local) {
+      return puppeteer.launch({
+        executablePath: local,
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none'],
+      });
+    }
   }
-  // Serverless (Vercel) path.
+
+  // SERVERLESS (Vercel / Lambda): `await chromium.executablePath()` is what extracts the
+  // bundled Chromium AND its shared libraries (libnss3.so, etc.) into /tmp and configures
+  // LD_LIBRARY_PATH. It MUST be awaited and MUST NOT be replaced with a custom path.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const chromium = require('@sparticuz/chromium');
   return puppeteer.launch({
     args: [...chromium.args, '--font-render-hinting=none'],
+    defaultViewport: chromium.defaultViewport,
     executablePath: await chromium.executablePath(),
     headless: chromium.headless,
-    defaultViewport: chromium.defaultViewport,
   });
 }
 
