@@ -71,19 +71,35 @@ async function launchBrowser() {
 
   // SERVERLESS (Vercel / Lambda): `await chromium.executablePath()` extracts the bundled
   // Chromium into /tmp. But @sparticuz/chromium only extracts its brotli-packed SHARED
-  // LIBRARIES (al2023.tar.br → libnss3.so, libnspr4.so, …) and sets LD_LIBRARY_PATH when it
-  // detects an AWS Lambda runtime, via AWS_EXECUTION_ENV / AWS_LAMBDA_JS_RUNTIME. Vercel runs
-  // on Lambda but does NOT set those variables the way @sparticuz expects, so the NSS libs are
-  // never unpacked and LD_LIBRARY_PATH is never set — which is the ROOT CAUSE of the deploy
-  // failure: "/tmp/chromium: error while loading shared libraries: libnss3.so". Chromium itself
-  // extracts fine (hence the /tmp/chromium path in the error), it just can't find its libs.
+  // LIBRARIES and sets LD_LIBRARY_PATH when it detects an AWS Lambda runtime. Vercel runs on
+  // Lambda but sets NEITHER AWS_EXECUTION_ENV nor AWS_LAMBDA_JS_RUNTIME, so with no marker the
+  // NSS libs are never unpacked and LD_LIBRARY_PATH is never set — the original deploy failure:
+  // "/tmp/chromium: error while loading shared libraries: libnss3.so".
   //
-  // Fix: assert the Lambda runtime env var BEFORE requiring @sparticuz (its module-load code and
-  // executablePath() extraction are BOTH gated on this detection). Using the actual Node major
-  // keeps the right tarball selected (al2.tar.br for <20, al2023.tar.br for 20/22). `??=` never
-  // clobbers a value the platform did set.
-  const nodeMajor = process.versions.node.split('.')[0];
-  process.env.AWS_LAMBDA_JS_RUNTIME ??= `nodejs${nodeMajor}.x`;
+  // Crucially, @sparticuz v131 ships TWO different NSS bundles gated on DIFFERENT detections
+  // (see build/index.js + build/helper.js in node_modules):
+  //   • isRunningInAwsLambda()      → extracts al2.tar.br    → /tmp/al2/lib,    LD → /tmp/al2/lib
+  //   • isRunningInAwsLambdaNode20()→ extracts al2023.tar.br → /tmp/al2023/lib, LD → /tmp/al2023/lib
+  // al2.tar.br is a STRICT SUBSET: it has libnss3/libnssutil3/libsoftokn3 but is MISSING
+  // libnspr4/libplc4/libplds4/libfreebl3. Only al2023.tar.br carries the FULL NSS set.
+  // isRunningInAwsLambda() is true only when the runtime marker says nodejs<20 (i.e. NOT 20.x /
+  // 22.x); isRunningInAwsLambdaNode20() is true when the marker contains 20.x / 22.x.
+  //
+  // The prior fix set AWS_LAMBDA_JS_RUNTIME to the *running* Node major. Vercel runs this on
+  // Node 18, so it produced "nodejs18.x" → the al2 (subset) path → libnss3 resolved but its
+  // dependency libnspr4 did NOT → error changed to "libnspr4.so: cannot open shared object file".
+  //
+  // Fix: BEFORE requiring @sparticuz, assert an AL2023 (Node 20+) runtime marker so the FULL
+  // al2023 bundle is the one that extracts and LD_LIBRARY_PATH points at it — regardless of the
+  // Node version Vercel declares. We clamp the detection major to >= 20 (Vercel/AWS today run on
+  // Amazon Linux 2023, whose base image lacks the AL2 system libs the subset relied on). Both
+  // markers are set with `??=` so a real platform value (e.g. a genuine AL2 Node-18 lambda that
+  // already has system NSS) is never clobbered. Module-load setup AND executablePath() extraction
+  // are both gated on this detection, so it must run before the require below.
+  const nodeMajor = Number(process.versions.node.split('.')[0]) || 0;
+  const detMajor = nodeMajor >= 20 ? nodeMajor : 20;
+  process.env.AWS_EXECUTION_ENV ??= `AWS_Lambda_nodejs${detMajor}.x`;
+  process.env.AWS_LAMBDA_JS_RUNTIME ??= `nodejs${detMajor}.x`;
 
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const chromium = require('@sparticuz/chromium');

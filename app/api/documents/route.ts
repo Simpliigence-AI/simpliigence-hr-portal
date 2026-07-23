@@ -1,3 +1,6 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
@@ -9,6 +12,34 @@ import { renderContractPdf } from '@/lib/render-pdf';
 // seconds, so allow more time than the platform default.
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+
+// NON-SECRET runtime diagnostics for PDF-render failures on serverless. The headless-Chromium
+// path breaks when @sparticuz/chromium fails to extract its NSS shared libs or set
+// LD_LIBRARY_PATH; this surfaces exactly what is present so a future failure is self-diagnosing.
+// Reports NO secrets (no Supabase/Zoho keys) — only Node version, LD_LIBRARY_PATH, the resolved
+// chromium binary path, and which key .so files exist vs are missing in the /tmp lib dirs.
+function renderDiagnostics(): string {
+  try {
+    const keyLibs = ['libnss3.so', 'libnspr4.so', 'libnssutil3.so', 'libplc4.so', 'libplds4.so', 'libsoftokn3.so', 'libfreebl3.so'];
+    const libDirs = [path.join(os.tmpdir(), 'al2', 'lib'), path.join(os.tmpdir(), 'al2023', 'lib')];
+    (process.env.LD_LIBRARY_PATH || '').split(':').filter(Boolean).forEach(d => { if (!libDirs.includes(d)) libDirs.push(d); });
+    const present = new Set<string>();
+    for (const d of libDirs) { try { for (const f of fs.readdirSync(d)) present.add(f); } catch { /* dir absent */ } }
+    const found = keyLibs.filter(l => present.has(l));
+    const missing = keyLibs.filter(l => !present.has(l));
+    const chromiumBin = path.join(os.tmpdir(), 'chromium');
+    const execPath = fs.existsSync(chromiumBin) ? chromiumBin : '(not extracted)';
+    return [
+      `node=${process.versions.node}`,
+      `LD_LIBRARY_PATH=${process.env.LD_LIBRARY_PATH ? process.env.LD_LIBRARY_PATH : '(unset)'}`,
+      `chromium=${execPath}`,
+      `libs_found=[${found.join(',')}]`,
+      `libs_missing=[${missing.join(',')}]`,
+    ].join(' ');
+  } catch (e) {
+    return `diagnostics_error=${(e as Error).message}`;
+  }
+}
 
 function serverSupabase() {
   const cookieStore = cookies();
@@ -78,7 +109,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unknown document type' }, { status: 400 });
     }
   } catch (e) {
-    return NextResponse.json({ error: `PDF generation failed: ${(e as Error).message}` }, { status: 500 });
+    return NextResponse.json(
+      { error: `PDF generation failed: ${(e as Error).message} | diag: ${renderDiagnostics()}` },
+      { status: 500 },
+    );
   }
 
   // Send to Zoho Sign
