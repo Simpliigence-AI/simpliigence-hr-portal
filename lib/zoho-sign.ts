@@ -136,6 +136,11 @@ export interface SendForSignatureResult {
 const SIG_WIDTH  = 200;
 const SIG_HEIGHT = 45;
 
+// CEO counter-signs all employment contracts electronically; default per HR, override via env.
+// These are company (not secret) values — a plain corporate email + display name.
+const DEFAULT_CEO_EMAIL = 'raghu.seetharam@simpliigence.com';
+const DEFAULT_CEO_NAME  = 'Raghu Seetharam';
+
 export async function sendDocumentForSignature(
   pdfBytes:     Buffer,
   fileName:     string,
@@ -164,9 +169,10 @@ export async function sendDocumentForSignature(
   ];
   const empFields = employeeFields.length ? employeeFields : [{ page: 2, yFromTop: 700 }];
 
-  // The company/CEO field is only added when a company signer email is configured.
-  const ceoEmail = process.env.ZOHO_CEO_EMAIL;
-  const ceoName  = process.env.ZOHO_CEO_NAME || 'Raghu Seetharam';
+  // The company/CEO field is added whenever a company anchor placement exists. The CEO signer
+  // defaults to the HR-confirmed counter-signer and can still be overridden via env.
+  const ceoEmail = process.env.ZOHO_CEO_EMAIL || DEFAULT_CEO_EMAIL;
+  const ceoName  = process.env.ZOHO_CEO_NAME  || DEFAULT_CEO_NAME;
   const includeCompany = !!(place.company && ceoEmail);
 
   const recipients = [
