@@ -117,6 +117,12 @@ export function contractCss(): string {
      is anchored near a page top — keeping the box on its underscore line regardless of how far the
      Appendix table above it happens to spill (mid-page blocks otherwise drift out of alignment). */
   .sig-final { break-before: page; page-break-before: always; }
+  /* The employee "Verified and Accepted" acceptance + first signature block also begins on its
+     own fresh page so its box is anchored near a page top. A mid-page box (following the CEO
+     block and acceptance paragraph on a partially filled page) drifts off its underscore line
+     because paginated print flow adds accumulating slack the continuous-layout measurement does
+     not see; page-top anchoring makes the box's offset deterministic (matching .sig-final). */
+  .accept-group { break-before: page; page-break-before: always; }
   .sig-space { height: ${LAYOUT.sigFieldHeightPt}pt; }
   .sig-anchor { display: inline-block; width: 1px; height: 1px; overflow: hidden; }
   .sig-line { font-weight: 700; letter-spacing: 1px; margin: 0; }
@@ -401,12 +407,19 @@ ${contractFooterHtml()}
         <p>Date: ${esc(d.contractDate)}</p>
       </div>
     </div>
-    <p class="verified">Verified and Accepted:</p>
-    <p class="accept-para">I have read, understood and accepted the above Employee Service Conditions/Contract. I understand that the Employee Service Conditions are the basis of my employment with the Company. I have also ensured that the Company has good prospects and is capable of offering me career growth. I am under no obligation or duress to accept these terms and conditions of employment; I accept them of my own free choice and will.</p>
   </div>
 
-  <!-- ── Employee signature block (flows after the acceptance paragraph) ── -->
-  <div>
+  <!-- ── Employee acceptance + first signature block — starts on its own fresh page ──
+       The "Verified and Accepted" heading, the acceptance paragraph and the first employee
+       signature box are page-top-anchored together (break-before:page). A MID-PAGE signature
+       box drifts: its measured Y is captured in the continuous layout and the paginated print
+       flow adds accumulating slack, so a box that follows a full paragraph lands off its line
+       (observed ~14–23pt low). Anchoring this group to a page top makes the box's offset from
+       the page top deterministic — the same technique that keeps the CEO block and the final
+       "UNDERSTOOD & ACCEPTED" block reliably on their lines. -->
+  <div class="accept-group">
+    <p class="verified">Verified and Accepted:</p>
+    <p class="accept-para">I have read, understood and accepted the above Employee Service Conditions/Contract. I understand that the Employee Service Conditions are the basis of my employment with the Company. I have also ensured that the Company has good prospects and is capable of offering me career growth. I am under no obligation or duress to accept these terms and conditions of employment; I accept them of my own free choice and will.</p>
     <div class="sig-block">
       <div class="sig-space"><span class="sig-anchor" data-role="employee"></span></div>
       <p class="sig-line">__________________</p>
