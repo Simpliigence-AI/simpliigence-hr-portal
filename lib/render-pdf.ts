@@ -153,6 +153,7 @@ export async function renderContractPdf(editedHtml: string): Promise<RenderResul
     // the signature box lands ON the printed line.
     const measured: {
       avoidBlocks: Array<{ top: number; height: number }>;
+      forcedBreaks: Array<{ top: number }>;
       anchors: Array<{ role: string; lineTop: number; lineLeft: number; blockTop: number }>;
     } = await page.evaluate(() => {
       // Signature blocks carry break-inside:avoid, so Chromium never splits one across a page
@@ -166,6 +167,18 @@ export async function renderContractPdf(editedHtml: string): Promise<RenderResul
           const r = el.getBoundingClientRect();
           return { top: r.top + window.scrollY, height: r.height };
         });
+      // Elements that force a fresh page before themselves (break-before/page-break-before). These
+      // do NOT straddle-push like avoid blocks; they unconditionally jump to the next page top,
+      // shifting everything below them down. The Appendix wrapper carries this so "Appendix – A"
+      // always begins its own page — and the final employee signature block sits AFTER it, so its
+      // measured Y must include this jump or the box lands on the wrong page.
+      const forcedBreaks = (Array.from(document.querySelectorAll('*')) as HTMLElement[])
+        .filter(el => {
+          const cs = window.getComputedStyle(el);
+          const bb = (cs.breakBefore || (cs as any).pageBreakBefore || '').toLowerCase();
+          return bb === 'page' || bb === 'always' || bb === 'left' || bb === 'right';
+        })
+        .map(el => ({ top: el.getBoundingClientRect().top + window.scrollY }));
       const anchors = (Array.from(document.querySelectorAll('.sig-anchor[data-role]')) as HTMLElement[]).map(m => {
         const block = m.closest('.sig-block') as HTMLElement | null;
         // The visible signature line (underscores) sits just below the anchor's blank space.
@@ -179,22 +192,36 @@ export async function renderContractPdf(editedHtml: string): Promise<RenderResul
           blockTop: block ? block.getBoundingClientRect().top + window.scrollY : r.top + window.scrollY,
         };
       });
-      return { avoidBlocks, anchors };
+      return { avoidBlocks, forcedBreaks, anchors };
     });
 
     const H = contentHeightPx;
 
-    // Simulate Chromium's page-break behaviour for break-inside:avoid blocks. Walking the blocks
-    // top-to-bottom, whenever a block that fits on a page would straddle a page boundary, it is
-    // pushed wholesale onto the next page; that push shifts everything below it down. Accumulating
-    // these pushes gives, for any document offset, the extra Y that real pagination adds vs. a
-    // naïve floor(top / H) model — which is exactly the slack that made later anchors drift.
-    const blocks = measured.avoidBlocks.slice().sort((a, b) => a.top - b.top);
+    // Simulate Chromium's page-break behaviour, walking every break-affecting element top-to-bottom
+    // and accumulating the extra Y that real pagination adds vs. a naïve floor(top / H) model — the
+    // slack that otherwise makes later anchors drift onto the wrong page. Two kinds of break:
+    //   • 'avoid'  (break-inside:avoid, e.g. .sig-block): if the block would straddle a page
+    //              boundary it is pushed WHOLE onto the next page, leaving slack behind. Only
+    //              .sig-block is modelled — the salary table is allowed to split between rows, so it
+    //              does not create the same whole-block slack and modelling it mis-predicts flow.
+    //   • 'before' (break-before:page, e.g. the Appendix wrapper): unconditionally jumps to the next
+    //              page top (unless already there), regardless of straddling.
+    // Both are merged and processed in document order so a forced break above a signature block
+    // correctly shifts that block's page down.
+    const breaks: Array<{ top: number; height: number; kind: 'avoid' | 'before' }> = [
+      ...measured.avoidBlocks.map(b => ({ top: b.top, height: b.height, kind: 'avoid' as const })),
+      ...measured.forcedBreaks.map(b => ({ top: b.top, height: 0, kind: 'before' as const })),
+    ].sort((a, b) => a.top - b.top);
     const pushed: Array<{ origTop: number; offsetAfter: number }> = [];
     let offset = 0;
-    for (const bl of blocks) {
+    for (const bl of breaks) {
       const top = bl.top + offset;
-      if (bl.height > 0 && bl.height <= H) {
+      if (bl.kind === 'before') {
+        // Force the element onto a fresh page: push to the next page top unless it already sits at
+        // one (within a small tolerance to absorb sub-pixel measurement noise).
+        const intoPage = top - Math.floor(top / H) * H;
+        if (intoPage > 0.5) offset += (Math.floor(top / H) + 1) * H - top;
+      } else if (bl.height > 0 && bl.height <= H) {
         const pStart = Math.floor(top / H);
         const pEnd = Math.floor((top + bl.height - 0.5) / H);
         if (pEnd > pStart) offset += (pStart + 1) * H - top; // push block to top of next page
