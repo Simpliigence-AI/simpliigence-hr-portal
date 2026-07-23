@@ -131,49 +131,82 @@ export async function renderContractPdf(editedHtml: string): Promise<RenderResul
     await page.setContent(wrapDocument(editedHtml), { waitUntil: 'networkidle0' });
     // Measure against PRINT styles (inline header/footer removed from flow, matching the PDF).
     await page.emulateMediaType('print');
+    // CRITICAL: remove the on-screen scrollbar (and the UA <body> margin) BEFORE measuring.
+    // The document is much taller than the viewport, so Chromium shows a vertical scrollbar that
+    // eats ~15px of width — making the measured content box NARROWER than the printed page's
+    // content box. Text then wraps to more lines on-screen than in the PDF, so every anchor's
+    // measured Y drifts DOWNWARD, and the error accumulates through the document (later anchors
+    // drift most) — occasionally enough to push a signature box onto the wrong page. Forcing
+    // overflow:hidden makes the measured content width equal the printed content width so the
+    // measured line-wrapping (and therefore pagination) matches the PDF. Resetting the body
+    // margin puts the left edge exactly at the page margin (x≈108pt on the signature lines).
+    await page.addStyleTag({ content: 'html,body{overflow:hidden !important;margin:0 !important;padding:0 !important;}' });
     await page.evaluate(async () => { try { await (document as any).fonts.ready; } catch { /* ignore */ } });
 
-    // Content-area height per printed page, in device px.
+    // Content-area height per printed page, in device px. The repeating header/footer live in the
+    // page MARGIN (outside the flow), so each page's usable content height = pageH − marginT − marginB.
     const contentHeightPx = (LAYOUT.pageHpt - LAYOUT.marginTopPt - LAYOUT.marginBottomPt) / PT_PER_PX;
 
-    // Measure anchor markers AND all forced-break sections in the (unpaginated) print layout.
+    // Measure, in the continuous (unpaginated) print layout: (1) each signature block with its
+    // top+height (to model its break-inside:avoid page push), and (2) each signature anchor's
+    // underscore line + its containing block. We map the underscore LINE (not the tiny anchor) so
+    // the signature box lands ON the printed line.
     const measured: {
-      sections: number[];
-      anchors: Array<{ role: string; markerTop: number; markerLeft: number; sectionTop: number | null }>;
+      avoidBlocks: Array<{ top: number; height: number }>;
+      anchors: Array<{ role: string; lineTop: number; lineLeft: number; blockTop: number }>;
     } = await page.evaluate(() => {
-      const yOf = (el: Element) => el.getBoundingClientRect().top + window.scrollY;
-      const sections = (Array.from(document.querySelectorAll('.sec-break')) as HTMLElement[])
-        .map(yOf).sort((a, b) => a - b);
+      // Signature blocks carry break-inside:avoid, so Chromium never splits one across a page
+      // boundary — if a block would straddle the boundary it is pushed WHOLE onto the next page,
+      // leaving slack at the bottom of the current page. We model that (below) so a signature that
+      // gets pushed is reported on the page it actually prints on (not the page it would flow to).
+      // Only .sig-block is modelled: the salary table is allowed to split between its rows, so its
+      // rows do NOT create the same whole-block slack and including them mis-predicts the flow.
+      const avoidBlocks = (Array.from(document.querySelectorAll('.sig-block')) as HTMLElement[])
+        .map(el => {
+          const r = el.getBoundingClientRect();
+          return { top: r.top + window.scrollY, height: r.height };
+        });
       const anchors = (Array.from(document.querySelectorAll('.sig-anchor[data-role]')) as HTMLElement[]).map(m => {
-        const r = m.getBoundingClientRect();
-        let sectionTop: number | null = null;
-        let el: HTMLElement | null = m;
-        while (el) {
-          if (el.classList && el.classList.contains('sec-break')) { sectionTop = yOf(el); break; }
-          el = el.parentElement;
-        }
-        return { role: m.getAttribute('data-role') || '', markerTop: r.top + window.scrollY, markerLeft: r.left + window.scrollX, sectionTop };
+        const block = m.closest('.sig-block') as HTMLElement | null;
+        // The visible signature line (underscores) sits just below the anchor's blank space.
+        const lineEl = (block && block.querySelector('.sig-line')) as HTMLElement | null;
+        const target = lineEl || m;
+        const r = target.getBoundingClientRect();
+        return {
+          role: m.getAttribute('data-role') || '',
+          lineTop: r.top + window.scrollY,
+          lineLeft: r.left + window.scrollX,
+          blockTop: block ? block.getBoundingClientRect().top + window.scrollY : r.top + window.scrollY,
+        };
       });
-      return { sections, anchors };
+      return { avoidBlocks, anchors };
     });
 
-    // Print page index of each forced-break section. Each .sec-break starts a fresh page, so
-    // walking them in order and adding the pages consumed by the content between successive
-    // breaks yields the true 0-based page index — robust to free-typed edits changing where
-    // the earlier body paginates. (Approximation limited to auto-break slack in the flowing
-    // body before the FIRST break; the live Zoho test verifies final placement.)
     const H = contentHeightPx;
-    const sectionPage = new Map<number, number>();
-    const secs = measured.sections;
-    for (let i = 0; i < secs.length; i++) {
-      if (i === 0) {
-        sectionPage.set(secs[i], Math.max(0, Math.ceil(secs[i] / H)));
-      } else {
-        const gap = secs[i] - secs[i - 1];
-        const prevPage = sectionPage.get(secs[i - 1]) as number;
-        sectionPage.set(secs[i], prevPage + Math.max(1, Math.ceil(gap / H)));
+
+    // Simulate Chromium's page-break behaviour for break-inside:avoid blocks. Walking the blocks
+    // top-to-bottom, whenever a block that fits on a page would straddle a page boundary, it is
+    // pushed wholesale onto the next page; that push shifts everything below it down. Accumulating
+    // these pushes gives, for any document offset, the extra Y that real pagination adds vs. a
+    // naïve floor(top / H) model — which is exactly the slack that made later anchors drift.
+    const blocks = measured.avoidBlocks.slice().sort((a, b) => a.top - b.top);
+    const pushed: Array<{ origTop: number; offsetAfter: number }> = [];
+    let offset = 0;
+    for (const bl of blocks) {
+      const top = bl.top + offset;
+      if (bl.height > 0 && bl.height <= H) {
+        const pStart = Math.floor(top / H);
+        const pEnd = Math.floor((top + bl.height - 0.5) / H);
+        if (pEnd > pStart) offset += (pStart + 1) * H - top; // push block to top of next page
       }
+      pushed.push({ origTop: bl.top, offsetAfter: offset });
     }
+    // Accumulated page-break offset applying to content at (original) document offset `y`.
+    const offsetAt = (y: number): number => {
+      let off = 0;
+      for (const b of pushed) { if (b.origTop <= y + 0.5) off = b.offsetAfter; else break; }
+      return off;
+    };
 
     const pdfUint8 = await page.pdf({
       printBackground: true,
@@ -194,17 +227,16 @@ export async function renderContractPdf(editedHtml: string): Promise<RenderResul
     const anchors: RenderedAnchor[] = measured.anchors
       .filter(a => a.role === 'company' || a.role === 'employee')
       .map(a => {
-        let pageIndex: number;
-        let yWithinContentPx: number;
-        if (a.sectionTop != null && sectionPage.has(a.sectionTop)) {
-          pageIndex = sectionPage.get(a.sectionTop) as number;
-          yWithinContentPx = a.markerTop - a.sectionTop;
-        } else {
-          pageIndex = Math.max(0, Math.floor(a.markerTop / H));
-          yWithinContentPx = a.markerTop - pageIndex * H;
-        }
-        const yFromTop = LAYOUT.marginTopPt + yWithinContentPx * PT_PER_PX;
-        const xFromLeft = LAYOUT.marginLeftPt + a.markerLeft * PT_PER_PX;
+        // Real (paginated) document offset of the signature line = measured offset + the slack that
+        // break-inside:avoid pushes added at/above this block (the block itself may have been pushed).
+        const realLineTop = a.lineTop + offsetAt(a.blockTop);
+        const pageIndex = Math.max(0, Math.floor(realLineTop / H));
+        const lineYFromTop = LAYOUT.marginTopPt + (realLineTop - pageIndex * H) * PT_PER_PX;
+        // Zoho's y_coord is the TOP of the signature box and the box extends DOWNWARD. Place the box
+        // so its BOTTOM rests on the underscore line (signature sits on the line, clear of the name
+        // printed below it) rather than centred above it.
+        const yFromTop = Math.max(LAYOUT.marginTopPt, lineYFromTop - LAYOUT.sigFieldHeightPt);
+        const xFromLeft = LAYOUT.marginLeftPt + a.lineLeft * PT_PER_PX;
         return { role: a.role as 'company' | 'employee', page: pageIndex, xFromLeft, yFromTop };
       });
 
