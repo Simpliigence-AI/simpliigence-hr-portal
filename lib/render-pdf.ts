@@ -69,9 +69,22 @@ async function launchBrowser() {
     }
   }
 
-  // SERVERLESS (Vercel / Lambda): `await chromium.executablePath()` is what extracts the
-  // bundled Chromium AND its shared libraries (libnss3.so, etc.) into /tmp and configures
-  // LD_LIBRARY_PATH. It MUST be awaited and MUST NOT be replaced with a custom path.
+  // SERVERLESS (Vercel / Lambda): `await chromium.executablePath()` extracts the bundled
+  // Chromium into /tmp. But @sparticuz/chromium only extracts its brotli-packed SHARED
+  // LIBRARIES (al2023.tar.br → libnss3.so, libnspr4.so, …) and sets LD_LIBRARY_PATH when it
+  // detects an AWS Lambda runtime, via AWS_EXECUTION_ENV / AWS_LAMBDA_JS_RUNTIME. Vercel runs
+  // on Lambda but does NOT set those variables the way @sparticuz expects, so the NSS libs are
+  // never unpacked and LD_LIBRARY_PATH is never set — which is the ROOT CAUSE of the deploy
+  // failure: "/tmp/chromium: error while loading shared libraries: libnss3.so". Chromium itself
+  // extracts fine (hence the /tmp/chromium path in the error), it just can't find its libs.
+  //
+  // Fix: assert the Lambda runtime env var BEFORE requiring @sparticuz (its module-load code and
+  // executablePath() extraction are BOTH gated on this detection). Using the actual Node major
+  // keeps the right tarball selected (al2.tar.br for <20, al2023.tar.br for 20/22). `??=` never
+  // clobbers a value the platform did set.
+  const nodeMajor = process.versions.node.split('.')[0];
+  process.env.AWS_LAMBDA_JS_RUNTIME ??= `nodejs${nodeMajor}.x`;
+
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const chromium = require('@sparticuz/chromium');
   return puppeteer.launch({

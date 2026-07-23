@@ -24,10 +24,7 @@ const nextConfig = {
       '/api/documents': ['./node_modules/@sparticuz/chromium/**'],
     },
   },
-  typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
-  generateBuildId: async () => 'build-v4',
-  generateBuildId: async () => 'build-v4',
+  generateBuildId: async () => 'build-v5',
 };
 
 module.exports = nextConfig;
