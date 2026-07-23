@@ -9,13 +9,28 @@
  *     (symlink .../chromium). Set LOCAL_CHROMIUM_PATH to override explicitly.
  *   • Vercel serverless: puppeteer-core + @sparticuz/chromium.
  *
- * Signature placement: this renderer no longer measures coordinate anchors. Signature fields
- * are bound to Zoho Sign TEXT TAGS embedded in the document text (see lib/contract-layout.ts),
- * which Zoho detects and places on upload — so no getBoundingClientRect measurement or
- * page/point mapping is needed here. This function only produces the PDF bytes.
+ * Signature anchors: after layout, every embedded marker (.sig-anchor[data-role]) is
+ * measured with getBoundingClientRect and mapped to Zoho Sign page-index + point coords.
+ * There are three: one `company` (CEO block) and two `employee` (the mid-doc "Verified and
+ * Accepted" block and the final "UNDERSTOOD & ACCEPTED" block). Both employee anchors belong
+ * to the SAME recipient and are returned in document order,
+ * using the shared LAYOUT geometry. The renderer's viewport width is set to the printed
+ * content-box width so the measured on-screen layout matches the paginated print layout.
  */
 import fs from 'fs';
 import { LAYOUT, PT_PER_PX, contentWidthPx, headerTemplateHtml, footerTemplateHtml } from './contract-layout';
+
+export interface RenderedAnchor {
+  role: 'company' | 'employee';
+  page: number; // 0-based page index
+  xFromLeft: number; // PDF points from the left edge of the page
+  yFromTop: number; // PDF points from the top edge of the page
+}
+
+export interface RenderResult {
+  pdf: Buffer;
+  anchors: RenderedAnchor[];
+}
 
 /** Resolve a local Chromium binary if one is available (container / CI), else undefined. */
 function localChromiumPath(): string | undefined {
@@ -108,18 +123,117 @@ function wrapDocument(fragment: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"/></head><body>${fragment}</body></html>`;
 }
 
-export async function renderContractPdf(editedHtml: string): Promise<Buffer> {
+export async function renderContractPdf(editedHtml: string): Promise<RenderResult> {
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: contentWidthPx(), height: 1400, deviceScaleFactor: 1 });
     await page.setContent(wrapDocument(editedHtml), { waitUntil: 'networkidle0' });
-    // Render against PRINT styles (inline header/footer removed from flow, matching the PDF).
+    // Measure against PRINT styles (inline header/footer removed from flow, matching the PDF).
     await page.emulateMediaType('print');
-    // Reset the UA <body> margin so the left edge sits exactly at the page margin, and drop the
-    // on-screen scrollbar so nothing perturbs the print layout.
+    // CRITICAL: remove the on-screen scrollbar (and the UA <body> margin) BEFORE measuring.
+    // The document is much taller than the viewport, so Chromium shows a vertical scrollbar that
+    // eats ~15px of width — making the measured content box NARROWER than the printed page's
+    // content box. Text then wraps to more lines on-screen than in the PDF, so every anchor's
+    // measured Y drifts DOWNWARD, and the error accumulates through the document (later anchors
+    // drift most) — occasionally enough to push a signature box onto the wrong page. Forcing
+    // overflow:hidden makes the measured content width equal the printed content width so the
+    // measured line-wrapping (and therefore pagination) matches the PDF. Resetting the body
+    // margin puts the left edge exactly at the page margin (x≈108pt on the signature lines).
     await page.addStyleTag({ content: 'html,body{overflow:hidden !important;margin:0 !important;padding:0 !important;}' });
     await page.evaluate(async () => { try { await (document as any).fonts.ready; } catch { /* ignore */ } });
+
+    // Content-area height per printed page, in device px. The repeating header/footer live in the
+    // page MARGIN (outside the flow), so each page's usable content height = pageH − marginT − marginB.
+    const contentHeightPx = (LAYOUT.pageHpt - LAYOUT.marginTopPt - LAYOUT.marginBottomPt) / PT_PER_PX;
+
+    // Measure, in the continuous (unpaginated) print layout: (1) each signature block with its
+    // top+height (to model its break-inside:avoid page push), and (2) each signature anchor's
+    // underscore line + its containing block. We map the underscore LINE (not the tiny anchor) so
+    // the signature box lands ON the printed line.
+    const measured: {
+      avoidBlocks: Array<{ top: number; height: number }>;
+      forcedBreaks: Array<{ top: number }>;
+      anchors: Array<{ role: string; lineTop: number; lineLeft: number; blockTop: number }>;
+    } = await page.evaluate(() => {
+      // Signature blocks carry break-inside:avoid, so Chromium never splits one across a page
+      // boundary — if a block would straddle the boundary it is pushed WHOLE onto the next page,
+      // leaving slack at the bottom of the current page. We model that (below) so a signature that
+      // gets pushed is reported on the page it actually prints on (not the page it would flow to).
+      // Only .sig-block is modelled: the salary table is allowed to split between its rows, so its
+      // rows do NOT create the same whole-block slack and including them mis-predicts the flow.
+      const avoidBlocks = (Array.from(document.querySelectorAll('.sig-block')) as HTMLElement[])
+        .map(el => {
+          const r = el.getBoundingClientRect();
+          return { top: r.top + window.scrollY, height: r.height };
+        });
+      // Elements that force a fresh page before themselves (break-before/page-break-before). These
+      // do NOT straddle-push like avoid blocks; they unconditionally jump to the next page top,
+      // shifting everything below them down. The Appendix wrapper carries this so "Appendix – A"
+      // always begins its own page — and the final employee signature block sits AFTER it, so its
+      // measured Y must include this jump or the box lands on the wrong page.
+      const forcedBreaks = (Array.from(document.querySelectorAll('*')) as HTMLElement[])
+        .filter(el => {
+          const cs = window.getComputedStyle(el);
+          const bb = (cs.breakBefore || (cs as any).pageBreakBefore || '').toLowerCase();
+          return bb === 'page' || bb === 'always' || bb === 'left' || bb === 'right';
+        })
+        .map(el => ({ top: el.getBoundingClientRect().top + window.scrollY }));
+      const anchors = (Array.from(document.querySelectorAll('.sig-anchor[data-role]')) as HTMLElement[]).map(m => {
+        const block = m.closest('.sig-block') as HTMLElement | null;
+        // The visible signature line (underscores) sits just below the anchor's blank space.
+        const lineEl = (block && block.querySelector('.sig-line')) as HTMLElement | null;
+        const target = lineEl || m;
+        const r = target.getBoundingClientRect();
+        return {
+          role: m.getAttribute('data-role') || '',
+          lineTop: r.top + window.scrollY,
+          lineLeft: r.left + window.scrollX,
+          blockTop: block ? block.getBoundingClientRect().top + window.scrollY : r.top + window.scrollY,
+        };
+      });
+      return { avoidBlocks, forcedBreaks, anchors };
+    });
+
+    const H = contentHeightPx;
+
+    // Simulate Chromium's page-break behaviour, walking every break-affecting element top-to-bottom
+    // and accumulating the extra Y that real pagination adds vs. a naïve floor(top / H) model — the
+    // slack that otherwise makes later anchors drift onto the wrong page. Two kinds of break:
+    //   • 'avoid'  (break-inside:avoid, e.g. .sig-block): if the block would straddle a page
+    //              boundary it is pushed WHOLE onto the next page, leaving slack behind. Only
+    //              .sig-block is modelled — the salary table is allowed to split between rows, so it
+    //              does not create the same whole-block slack and modelling it mis-predicts flow.
+    //   • 'before' (break-before:page, e.g. the Appendix wrapper): unconditionally jumps to the next
+    //              page top (unless already there), regardless of straddling.
+    // Both are merged and processed in document order so a forced break above a signature block
+    // correctly shifts that block's page down.
+    const breaks: Array<{ top: number; height: number; kind: 'avoid' | 'before' }> = [
+      ...measured.avoidBlocks.map(b => ({ top: b.top, height: b.height, kind: 'avoid' as const })),
+      ...measured.forcedBreaks.map(b => ({ top: b.top, height: 0, kind: 'before' as const })),
+    ].sort((a, b) => a.top - b.top);
+    const pushed: Array<{ origTop: number; offsetAfter: number }> = [];
+    let offset = 0;
+    for (const bl of breaks) {
+      const top = bl.top + offset;
+      if (bl.kind === 'before') {
+        // Force the element onto a fresh page: push to the next page top unless it already sits at
+        // one (within a small tolerance to absorb sub-pixel measurement noise).
+        const intoPage = top - Math.floor(top / H) * H;
+        if (intoPage > 0.5) offset += (Math.floor(top / H) + 1) * H - top;
+      } else if (bl.height > 0 && bl.height <= H) {
+        const pStart = Math.floor(top / H);
+        const pEnd = Math.floor((top + bl.height - 0.5) / H);
+        if (pEnd > pStart) offset += (pStart + 1) * H - top; // push block to top of next page
+      }
+      pushed.push({ origTop: bl.top, offsetAfter: offset });
+    }
+    // Accumulated page-break offset applying to content at (original) document offset `y`.
+    const offsetAt = (y: number): number => {
+      let off = 0;
+      for (const b of pushed) { if (b.origTop <= y + 0.5) off = b.offsetAfter; else break; }
+      return off;
+    };
 
     const pdfUint8 = await page.pdf({
       printBackground: true,
@@ -135,7 +249,25 @@ export async function renderContractPdf(editedHtml: string): Promise<Buffer> {
         right: `${LAYOUT.marginRightPt / PT_PER_PX}px`,
       },
     });
-    return Buffer.from(pdfUint8);
+    const pdf = Buffer.from(pdfUint8);
+
+    const anchors: RenderedAnchor[] = measured.anchors
+      .filter(a => a.role === 'company' || a.role === 'employee')
+      .map(a => {
+        // Real (paginated) document offset of the signature line = measured offset + the slack that
+        // break-inside:avoid pushes added at/above this block (the block itself may have been pushed).
+        const realLineTop = a.lineTop + offsetAt(a.blockTop);
+        const pageIndex = Math.max(0, Math.floor(realLineTop / H));
+        const lineYFromTop = LAYOUT.marginTopPt + (realLineTop - pageIndex * H) * PT_PER_PX;
+        // Zoho's y_coord is the TOP of the signature box and the box extends DOWNWARD. Place the box
+        // so its BOTTOM rests on the underscore line (signature sits on the line, clear of the name
+        // printed below it) rather than centred above it.
+        const yFromTop = Math.max(LAYOUT.marginTopPt, lineYFromTop - LAYOUT.sigFieldHeightPt);
+        const xFromLeft = LAYOUT.marginLeftPt + a.lineLeft * PT_PER_PX;
+        return { role: a.role as 'company' | 'employee', page: pageIndex, xFromLeft, yFromTop };
+      });
+
+    return { pdf, anchors };
   } finally {
     await browser.close();
   }

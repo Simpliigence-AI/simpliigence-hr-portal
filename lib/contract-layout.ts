@@ -118,12 +118,7 @@ export function contractCss(): string {
      Appendix table above it happens to spill (mid-page blocks otherwise drift out of alignment). */
   .sig-final { break-before: page; page-break-before: always; }
   .sig-space { height: ${LAYOUT.sigFieldHeightPt}pt; }
-  /* Zoho Sign text tag — see sigTagSpan(). Real, extractable text kept in the PDF text layer
-     for Zoho's automatic field detection, but rendered invisibly (white, 7pt) inside a
-     zero-width inline-block so it never shifts the visible underscore signature line. */
-  .sig-tag { display: inline-block; width: 0; overflow: visible; white-space: nowrap;
-             font-size: 7pt; line-height: 0; color: #ffffff; letter-spacing: normal;
-             vertical-align: baseline; }
+  .sig-anchor { display: inline-block; width: 1px; height: 1px; overflow: hidden; }
   .sig-line { font-weight: 700; letter-spacing: 1px; margin: 0; }
   .sig-name { font-weight: 700; margin: 2pt 0 0 0; padding-left: 0; }
   .sig-role { margin: 0; padding-left: 0; }
@@ -291,37 +286,10 @@ function appendixTableHtml(d: ContractData): string {
     </table>`;
 }
 
-/* ─── Zoho Sign TEXT TAGS (automatic field detection) ──────────────────────────────────
- * Signature fields are placed by embedding a Zoho Sign text tag in the document's text layer
- * at each signature line — NOT by coordinates. On upload, Zoho scans the PDF text, finds each
- * tag and creates the matching Signature field exactly where the tag sits, so placement is
- * immune to pagination / edit drift (the old coordinate approach mis-placed the box).
- *
- * Syntax: {{<FieldType>:Recipient<n>}}. Recipient<n> maps to the Nth action/recipient in the
- * signing request (by signing_order): Recipient1 = the employee (signing_order 1),
- * Recipient2 = the company/CEO counter-signer (signing_order 2). These MUST stay in lock-step
- * with the actions array built in lib/zoho-sign.ts.
- *
- * The tag is REAL, extractable text (so Zoho — and pdftotext — can read it) but rendered
- * invisibly via the .sig-tag class: white (#fff), 7pt, and inside a zero-width inline-block so
- * it neither shows in the on-screen/contenteditable preview and final PDF nor shifts the
- * visible underscore signature line. It is emitted at the START of each underscore line so the
- * detected field lands on that line. */
-export const EMPLOYEE_SIGNATURE_TAG = '{{Signature:Recipient1}}';
-export const COMPANY_SIGNATURE_TAG  = '{{Signature:Recipient2}}';
-
-function sigTagSpan(tag: string): string {
-  // Inline style mirrors the .sig-tag rule so the tag stays invisible + zero-width even after
-  // the fragment is round-tripped through the contenteditable editor (which preserves inline
-  // styles more reliably than class-scoped CSS).
-  return `<span class="sig-tag" style="display:inline-block;width:0;overflow:visible;white-space:nowrap;font-size:7pt;line-height:0;color:#ffffff;letter-spacing:normal;vertical-align:baseline;">${tag}</span>`;
-}
-
 /**
  * Build the full styled contract as an HTML fragment: <style> + header + footer + body,
- * with a Zoho Sign text tag embedded at each of the three signature lines (two employee =
- * Recipient1, one company/CEO = Recipient2). This exact fragment is placed into the editor
- * and, after edits, rendered to the PDF that is uploaded to Zoho Sign for tag detection.
+ * with two embedded signature anchor markers (data-role="company" / "employee").
+ * This exact fragment is placed into the editor and, after edits, rendered to the PDF.
  */
 export function buildContractHtml(d: ContractData): string {
   const addr = d.employeeAddress?.trim() ? esc(d.employeeAddress) : '<em>[address not entered]</em>';
@@ -424,8 +392,8 @@ ${contractFooterHtml()}
       <p>Thank You,<br/>Best Regards,<br/><strong>For Simpliigence Private Limited</strong></p>
     </div>
     <div class="sig-block">
-      <div class="sig-space"></div>
-      <p class="sig-line">${sigTagSpan(COMPANY_SIGNATURE_TAG)}__________________</p>
+      <div class="sig-space"><span class="sig-anchor" data-role="company"></span></div>
+      <p class="sig-line">__________________</p>
       <p class="sig-name">Raghu Seetharam</p>
       <p class="sig-role">CEO</p>
       <div class="sig-meta-right">
@@ -440,8 +408,8 @@ ${contractFooterHtml()}
   <!-- ── Employee signature block (flows after the acceptance paragraph) ── -->
   <div>
     <div class="sig-block">
-      <div class="sig-space"></div>
-      <p class="sig-line">${sigTagSpan(EMPLOYEE_SIGNATURE_TAG)}__________________</p>
+      <div class="sig-space"><span class="sig-anchor" data-role="employee"></span></div>
+      <p class="sig-line">__________________</p>
       <p class="sig-name">${esc(d.employeeName)}</p>
       <div class="sig-meta-left">
         <p>Date: ${esc(d.contractDate)}</p>
@@ -463,8 +431,8 @@ ${contractFooterHtml()}
   <!-- ── Final understood & accepted (starts on its own fresh page) ── -->
   <div class="sig-block sig-final" style="padding-top:16pt">
     <p class="verified" style="padding-left:0">UNDERSTOOD &amp; ACCEPTED:</p>
-    <div class="sig-space"></div>
-    <p class="sig-line">${sigTagSpan(EMPLOYEE_SIGNATURE_TAG)}__________________</p>
+    <div class="sig-space"><span class="sig-anchor" data-role="employee"></span></div>
+    <p class="sig-line">__________________</p>
     <p class="sig-name">${esc(d.employeeName)}</p>
   </div>
 </div>
