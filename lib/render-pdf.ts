@@ -82,24 +82,28 @@ async function launchBrowser() {
   //   • isRunningInAwsLambdaNode20()→ extracts al2023.tar.br → /tmp/al2023/lib, LD → /tmp/al2023/lib
   // al2.tar.br is a STRICT SUBSET: it has libnss3/libnssutil3/libsoftokn3 but is MISSING
   // libnspr4/libplc4/libplds4/libfreebl3. Only al2023.tar.br carries the FULL NSS set.
-  // isRunningInAwsLambda() is true only when the runtime marker says nodejs<20 (i.e. NOT 20.x /
-  // 22.x); isRunningInAwsLambdaNode20() is true when the marker contains 20.x / 22.x.
   //
-  // The prior fix set AWS_LAMBDA_JS_RUNTIME to the *running* Node major. Vercel runs this on
-  // Node 18, so it produced "nodejs18.x" → the al2 (subset) path → libnss3 resolved but its
-  // dependency libnspr4 did NOT → error changed to "libnspr4.so: cannot open shared object file".
+  // The detectors switch purely on the runtime-marker STRING, not on process.version:
+  //   • isRunningInAwsLambdaNode20() → true ONLY when the marker contains the literal "20.x"
+  //     or "22.x" substring.
+  //   • isRunningInAwsLambda()       → true when the marker contains "nodejs" but NEITHER
+  //     "20.x" NOR "22.x".
   //
-  // Fix: BEFORE requiring @sparticuz, assert an AL2023 (Node 20+) runtime marker so the FULL
-  // al2023 bundle is the one that extracts and LD_LIBRARY_PATH points at it — regardless of the
-  // Node version Vercel declares. We clamp the detection major to >= 20 (Vercel/AWS today run on
-  // Amazon Linux 2023, whose base image lacks the AL2 system libs the subset relied on). Both
-  // markers are set with `??=` so a real platform value (e.g. a genuine AL2 Node-18 lambda that
-  // already has system NSS) is never clobbered. Module-load setup AND executablePath() extraction
-  // are both gated on this detection, so it must run before the require below.
-  const nodeMajor = Number(process.versions.node.split('.')[0]) || 0;
-  const detMajor = nodeMajor >= 20 ? nodeMajor : 20;
-  process.env.AWS_EXECUTION_ENV ??= `AWS_Lambda_nodejs${detMajor}.x`;
-  process.env.AWS_LAMBDA_JS_RUNTIME ??= `nodejs${detMajor}.x`;
+  // Vercel runs Node 24. The prior fix set the marker to the ACTUAL Node major → "nodejs24.x".
+  // "24.x" matches neither detector's 20.x/22.x substring, so isRunningInAwsLambda() won → the
+  // al2 (subset) bundle extracted → libnss3 resolved but its dependency libnspr4 did NOT →
+  // "libnspr4.so: cannot open shared object file" on every Vercel deploy.
+  //
+  // Fix: FORCE the runtime marker to "nodejs20.x" (a value the Node20 detector recognizes) so
+  // the FULL al2023 bundle is the one that extracts and LD_LIBRARY_PATH points at /tmp/al2023/lib
+  // — regardless of the actual Node version Vercel declares. Vercel/AWS today run on Amazon
+  // Linux 2023, so the al2023 NSS set is the correct one. Plain `=` (NOT `??=`) is deliberate: we
+  // must OVERRIDE whatever Vercel or the prior code left in these vars (e.g. "nodejs24.x") to
+  // force the al2023 branch. This is inside the already-Vercel-gated serverless path, so it never
+  // affects local dev or a genuine AWS Lambda. Module-load setup AND executablePath() extraction
+  // are both gated on this detection, so it MUST run before the require below.
+  process.env.AWS_EXECUTION_ENV = 'AWS_Lambda_nodejs20.x';
+  process.env.AWS_LAMBDA_JS_RUNTIME = 'nodejs20.x';
 
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const chromium = require('@sparticuz/chromium');
