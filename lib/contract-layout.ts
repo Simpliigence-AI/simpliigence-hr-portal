@@ -113,6 +113,10 @@ export function contractCss(): string {
      break-inside:avoid so a single block never splits across a page boundary — it
      may still start mid-page. */
   .sig-block { padding-left: 18pt; position: relative; break-inside: avoid; page-break-inside: avoid; }
+  /* The final "UNDERSTOOD & ACCEPTED" employee signature begins on its own fresh page so its box
+     is anchored near a page top — keeping the box on its underscore line regardless of how far the
+     Appendix table above it happens to spill (mid-page blocks otherwise drift out of alignment). */
+  .sig-final { break-before: page; page-break-before: always; }
   .sig-space { height: ${LAYOUT.sigFieldHeightPt}pt; }
   .sig-anchor { display: inline-block; width: 1px; height: 1px; overflow: hidden; }
   .sig-line { font-weight: 700; letter-spacing: 1px; margin: 0; }
@@ -124,7 +128,8 @@ export function contractCss(): string {
   .verified { font-weight: 700; margin: 10pt 0 8pt 0; padding-left: 18pt; }
   .accept-para { padding-left: 18pt !important; }
 
-  /* Appendix table */
+  /* Appendix table — Appendix – A always begins on a fresh page (its own page). */
+  .appendix { break-before: page; page-break-before: always; }
   .appendix-title { text-align: center; font-size: 13pt; font-weight: 700; margin: 10pt 0 14pt 0; }
   table.ctc { width: 100%; border-collapse: collapse; font-size: 9pt; }
   /* The salary table is ~a full page tall, so it flows (splits) across the page boundary
@@ -411,8 +416,10 @@ ${contractFooterHtml()}
         <p>Place: ${esc(d.placeOfPosting)}</p>
       </div>
     </div>
+  </div>
 
-    <!-- ── Appendix A (flows onto the employee-signature page, like the sample) ── -->
+  <!-- ── Appendix A (forced onto its own fresh page via break-before:page) ── -->
+  <div class="appendix">
     <p class="appendix-title">Appendix – A</p>
     ${appendixTableHtml(d)}
     <p class="appendix-note">*You shall be required to produce before the Company all supporting of such expenses incurred in order to claim exemption of such allowances from income tax.</p>
@@ -421,8 +428,8 @@ ${contractFooterHtml()}
     <p class="appendix-note">Copies of such Proof of investments shall be submitted by you to the company along with actuals for verification purpose before 20th March of the relevant financial year. If you leave the Company before submission of such proofs or do not produce them at all, the Company shall adjust the tax while computing your full and final settlement.</p>
   </div>
 
-  <!-- ── Final understood & accepted ── -->
-  <div class="sig-block" style="padding-top:16pt">
+  <!-- ── Final understood & accepted (starts on its own fresh page) ── -->
+  <div class="sig-block sig-final" style="padding-top:16pt">
     <p class="verified" style="padding-left:0">UNDERSTOOD &amp; ACCEPTED:</p>
     <div class="sig-space"><span class="sig-anchor" data-role="employee"></span></div>
     <p class="sig-line">__________________</p>
