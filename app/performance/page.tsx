@@ -155,7 +155,7 @@ export default function PerformancePage() {
   }, [])
 
   useEffect(() => {
-    supabase.from('employees').select('id,name,role,dept,manager,region,type,email')
+    supabase.from('employees').select('id,name,role,dept,manager,region,type')
       .eq('active', true).in('status', ['Active', 'Contractor']).order('name')
       .then(({ data }) => { setEmployees((data ?? []) as Employee[]); setLoading(false) })
   }, [])
@@ -253,11 +253,14 @@ export default function PerformancePage() {
   useEffect(() => {
     if (!userEmail || employees.length === 0) return
     if (userEmail === ADMIN_EMAIL) { setManagerName(null); return }
-    const emp = employees.find((e: any) => e.email?.toLowerCase() === userEmail.toLowerCase())
-    if (emp) { setManagerName(emp.name); return }
+    // employees table has no email column, so derive the name from the login
+    // e.g. manjunath.tadahal@... -> "Manjunath Tadahal", then match against employees.name
     const derived = userEmail.split('@')[0].split('.')
       .map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
-    setManagerName(derived)
+    const match = employees.find((e: any) =>
+      (e.name ?? '').trim().toLowerCase() === derived.trim().toLowerCase()
+    )
+    setManagerName(match ? match.name : derived)
   }, [userEmail, employees])
 
   // Managers only see their direct + indirect reports; admin sees all
