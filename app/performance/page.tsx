@@ -146,12 +146,16 @@ export default function PerformancePage() {
   const [apReviewId, setApReviewId] = useState<string | null>(null)
   const [expandedScores, setExpandedScores] = useState<Set<string>>(new Set())
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const [roleLoaded, setRoleLoaded] = useState(false)
   const [managerName, setManagerName] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUserEmail(session?.user?.email ?? null)
-    })
+    fetch('/api/my-role')
+      .then(r => r.json())
+      .then(d => { setUserRole(d?.role ?? null); setUserEmail(d?.email ?? null) })
+      .catch(() => {})
+      .finally(() => setRoleLoaded(true))
   }, [])
 
   useEffect(() => {
@@ -249,10 +253,13 @@ export default function PerformancePage() {
   const F = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
 
-  // Resolve the logged-in manager's canonical name (admin sees everyone)
+  // Resolve scope. admin + super_manager review anybody; manager is limited to their chain.
   useEffect(() => {
-    if (!userEmail || employees.length === 0) return
-    if (userEmail === ADMIN_EMAIL) { setManagerName(null); return }
+    if (!roleLoaded || employees.length === 0) return
+    if (userRole === 'admin' || userRole === 'super_manager' || userEmail === ADMIN_EMAIL) {
+      setManagerName(null); return
+    }
+    if (!userEmail) return
     // employees table has no email column, so derive the name from the login
     // e.g. manjunath.tadahal@... -> "Manjunath Tadahal", then match against employees.name
     const derived = userEmail.split('@')[0].split('.')
@@ -261,7 +268,7 @@ export default function PerformancePage() {
       (e.name ?? '').trim().toLowerCase() === derived.trim().toLowerCase()
     )
     setManagerName(match ? match.name : derived)
-  }, [userEmail, employees])
+  }, [userEmail, userRole, roleLoaded, employees])
 
   // Managers only see their direct + indirect reports; admin sees all
   const visibleEmployees = useMemo(
