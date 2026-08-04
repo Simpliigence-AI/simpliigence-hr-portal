@@ -6,7 +6,7 @@ import { createBrowserClient } from '@supabase/ssr';
 import { cn } from '@/lib/utils';
 
 const ADMIN_EMAIL = 'raghu.seetharam@simpliigence.com';
-type Role = 'admin' | 'manager' | 'viewer';
+type Role = 'admin' | 'super_manager' | 'manager' | 'viewer';
 
 interface HrUser {
   id: string;
@@ -19,7 +19,8 @@ interface HrUser {
 }
 
 const ROLE_META: Record<Role, { label: string; bg: string; text: string; desc: string }> = {
-  admin:   { label: 'Admin',   bg: 'bg-red-100',  text: 'text-red-700',   desc: 'Full access including user management' },
+  admin:         { label: 'Admin',         bg: 'bg-red-100',    text: 'text-red-700',    desc: 'Full access including user management' },
+  super_manager: { label: 'Super Manager', bg: 'bg-purple-100', text: 'text-purple-700', desc: 'Reviews anybody, no admin access' },
   manager: { label: 'Manager', bg: 'bg-blue-100', text: 'text-blue-700',  desc: 'Full HR access, no admin' },
   viewer:  { label: 'Viewer',  bg: 'bg-gray-100', text: 'text-gray-600',  desc: 'Read-only access' },
 };
@@ -71,7 +72,7 @@ interface AddUserModalProps {
 
 function AddUserModal({ onClose, onCreated }: AddUserModalProps) {
   const [email, setEmail]       = useState('');
-  const [role, setRole]         = useState<'manager' | 'viewer'>('viewer');
+  const [role, setRole]         = useState<'super_manager' | 'manager' | 'viewer'>('viewer');
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
@@ -137,14 +138,14 @@ function AddUserModal({ onClose, onCreated }: AddUserModalProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['viewer', 'manager'] as const).map(r => (
+            <div className="grid grid-cols-3 gap-2">
+              {(['viewer', 'manager', 'super_manager'] as const).map(r => (
                 <button key={r} type="button" onClick={() => setRole(r)}
                   className={cn('border rounded-xl px-3 py-2.5 text-sm text-left transition-colors',
                     role === r ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   )}
                 >
-                  <div className="font-medium capitalize">{r}</div>
+                  <div className="font-medium">{ROLE_META[r].label}</div>
                   <div className="text-xs opacity-70 mt-0.5">{ROLE_META[r].desc}</div>
                 </button>
               ))}
@@ -243,6 +244,7 @@ export default function AdminUsersPage() {
   }
 
   const adminUsers   = users.filter(u => u.role === 'admin');
+  const superUsers   = users.filter(u => u.role === 'super_manager');
   const managerUsers = users.filter(u => u.role === 'manager');
   const viewerUsers  = users.filter(u => u.role === 'viewer');
 
@@ -270,7 +272,7 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-4 gap-3 mb-6">
         {(Object.entries(ROLE_META) as [Role, typeof ROLE_META[Role]][]).map(([role, m]) => (
           <div key={role} className="bg-white border rounded-xl p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-1">
@@ -305,7 +307,7 @@ export default function AdminUsersPage() {
               </tr>
             </thead>
             <tbody>
-              {[...adminUsers, ...managerUsers, ...viewerUsers].map((u) => {
+              {[...adminUsers, ...superUsers, ...managerUsers, ...viewerUsers].map((u) => {
                 const isSelf = u.email === ADMIN_EMAIL;
                 return (
                   <tr key={u.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
@@ -339,6 +341,7 @@ export default function AdminUsersPage() {
                             onChange={e => changeRole(u.id, e.target.value as Role)}
                             className="text-sm border rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 cursor-pointer">
                             <option value="admin">Admin</option>
+                            <option value="super_manager">Super Manager</option>
                             <option value="manager">Manager</option>
                             <option value="viewer">Viewer</option>
                           </select>
