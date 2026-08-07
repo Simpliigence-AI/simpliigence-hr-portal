@@ -4,6 +4,9 @@ import { NextResponse, type NextRequest } from 'next/server'
 // Paths managers are allowed to visit — everything else redirects to /performance
 const MANAGER_ALLOWED = ['/performance']
 
+// Roles restricted to the Performance page only (managers + Performance-access reviewers)
+const PERFORMANCE_ONLY_ROLES = ['manager', 'performance_reviewer']
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: { headers: request.headers },
@@ -40,7 +43,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Role-based routing: managers may only visit /performance (and /api/ routes)
+  // Role-based routing: managers / performance reviewers may only visit
+  // /performance (and /api/ routes)
   if (session && pathname !== '/login' && !pathname.startsWith('/api/')) {
     const { data: roleData } = await supabase
       .from('user_roles')
@@ -50,7 +54,7 @@ export async function middleware(request: NextRequest) {
 
     const role = roleData?.role ?? 'admin'
 
-    if (role === 'manager') {
+    if (PERFORMANCE_ONLY_ROLES.includes(role)) {
       const allowed = MANAGER_ALLOWED.some(
         p => pathname === p || pathname.startsWith(p + '/')
       )

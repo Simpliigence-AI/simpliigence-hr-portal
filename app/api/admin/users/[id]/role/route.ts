@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
 const ADMIN_EMAIL = 'raghu.seetharam@simpliigence.com'
-const VALID_ROLES = ['admin', 'super_manager', 'manager', 'viewer'] as const
+const VALID_ROLES = ['admin', 'super_manager', 'manager', 'performance_reviewer', 'viewer'] as const
 type Role = typeof VALID_ROLES[number]
 
 const adminClient = createClient(
