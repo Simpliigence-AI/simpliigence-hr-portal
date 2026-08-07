@@ -253,10 +253,14 @@ export default function PerformancePage() {
   const F = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
 
-  // Resolve scope. admin + super_manager review anybody; manager is limited to their chain.
+  // Resolve scope. admin + super_manager + performance_reviewer review anybody
+  // (full list); manager is limited to their reporting chain.
   useEffect(() => {
     if (!roleLoaded || employees.length === 0) return
-    if (userRole === 'admin' || userRole === 'super_manager' || userEmail === ADMIN_EMAIL) {
+    if (
+      userRole === 'admin' || userRole === 'super_manager' ||
+      userRole === 'performance_reviewer' || userEmail === ADMIN_EMAIL
+    ) {
       setManagerName(null); return
     }
     if (!userEmail) return

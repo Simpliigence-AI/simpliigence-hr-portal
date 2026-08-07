@@ -6,7 +6,7 @@ import { createBrowserClient } from '@supabase/ssr';
 import { cn } from '@/lib/utils';
 
 const ADMIN_EMAIL = 'raghu.seetharam@simpliigence.com';
-type Role = 'admin' | 'super_manager' | 'manager' | 'viewer';
+type Role = 'admin' | 'super_manager' | 'manager' | 'performance_reviewer' | 'viewer';
 
 interface HrUser {
   id: string;
@@ -22,6 +22,7 @@ const ROLE_META: Record<Role, { label: string; bg: string; text: string; desc: s
   admin:         { label: 'Admin',         bg: 'bg-red-100',    text: 'text-red-700',    desc: 'Full access including user management' },
   super_manager: { label: 'Super Manager', bg: 'bg-purple-100', text: 'text-purple-700', desc: 'Reviews anybody, no admin access' },
   manager: { label: 'Manager', bg: 'bg-blue-100', text: 'text-blue-700',  desc: 'Full HR access, no admin' },
+  performance_reviewer: { label: 'Performance Reviewer', bg: 'bg-teal-100', text: 'text-teal-700', desc: 'Views & adds reviews for everyone, Performance page only' },
   viewer:  { label: 'Viewer',  bg: 'bg-gray-100', text: 'text-gray-600',  desc: 'Read-only access' },
 };
 
@@ -72,7 +73,7 @@ interface AddUserModalProps {
 
 function AddUserModal({ onClose, onCreated }: AddUserModalProps) {
   const [email, setEmail]       = useState('');
-  const [role, setRole]         = useState<'super_manager' | 'manager' | 'viewer'>('viewer');
+  const [role, setRole]         = useState<'super_manager' | 'manager' | 'performance_reviewer' | 'viewer'>('viewer');
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
@@ -138,8 +139,8 @@ function AddUserModal({ onClose, onCreated }: AddUserModalProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['viewer', 'manager', 'super_manager'] as const).map(r => (
+            <div className="grid grid-cols-2 gap-2">
+              {(['viewer', 'manager', 'performance_reviewer', 'super_manager'] as const).map(r => (
                 <button key={r} type="button" onClick={() => setRole(r)}
                   className={cn('border rounded-xl px-3 py-2.5 text-sm text-left transition-colors',
                     role === r ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'
@@ -243,10 +244,11 @@ export default function AdminUsersPage() {
     return <div className="p-8 flex items-center justify-center min-h-screen"><div className="text-gray-400 text-sm">Checking access…</div></div>;
   }
 
-  const adminUsers   = users.filter(u => u.role === 'admin');
-  const superUsers   = users.filter(u => u.role === 'super_manager');
-  const managerUsers = users.filter(u => u.role === 'manager');
-  const viewerUsers  = users.filter(u => u.role === 'viewer');
+  const adminUsers    = users.filter(u => u.role === 'admin');
+  const superUsers    = users.filter(u => u.role === 'super_manager');
+  const managerUsers  = users.filter(u => u.role === 'manager');
+  const reviewerUsers = users.filter(u => u.role === 'performance_reviewer');
+  const viewerUsers   = users.filter(u => u.role === 'viewer');
 
   return (
     <div className="p-6 max-w-4xl">
@@ -272,7 +274,7 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-5 gap-3 mb-6">
         {(Object.entries(ROLE_META) as [Role, typeof ROLE_META[Role]][]).map(([role, m]) => (
           <div key={role} className="bg-white border rounded-xl p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-1">
@@ -307,7 +309,7 @@ export default function AdminUsersPage() {
               </tr>
             </thead>
             <tbody>
-              {[...adminUsers, ...superUsers, ...managerUsers, ...viewerUsers].map((u) => {
+              {[...adminUsers, ...superUsers, ...managerUsers, ...reviewerUsers, ...viewerUsers].map((u) => {
                 const isSelf = u.email === ADMIN_EMAIL;
                 return (
                   <tr key={u.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
@@ -343,6 +345,7 @@ export default function AdminUsersPage() {
                             <option value="admin">Admin</option>
                             <option value="super_manager">Super Manager</option>
                             <option value="manager">Manager</option>
+                            <option value="performance_reviewer">Performance Reviewer</option>
                             <option value="viewer">Viewer</option>
                           </select>
                           {saving === u.id && <span className="text-xs text-gray-400 animate-pulse">Saving…</span>}
