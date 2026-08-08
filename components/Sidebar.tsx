@@ -20,6 +20,7 @@ const NAV = [
   { href: '/joining',          label: 'Joining Pipeline',    icon: '🤝', section: 'People',      adminOnly: false },
   { href: '/engagement',       label: 'Engagement',          icon: '💬', section: 'People',      adminOnly: false },
 
+  { href: '/cockpit',          label: 'Cockpit',             icon: '🎯', section: 'Performance', adminOnly: false },
   { href: '/performance',      label: 'Performance',         icon: '📊', section: 'Performance', adminOnly: false },
   { href: '/certifications',   label: 'Certifications',      icon: '🏅', section: 'Performance', adminOnly: false },
   { href: '/above-beyond',     label: 'Above & Beyond',      icon: '⭐', section: 'Performance', adminOnly: false },
