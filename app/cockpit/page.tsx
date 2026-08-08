@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
-
-const ADMIN_EMAIL = 'raghu.seetharam@simpliigence.com';
+import { useAccess } from '@/lib/access';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -144,7 +143,7 @@ export default function CockpitPage() {
     [],
   );
 
-  const [email, setEmail] = useState<string | null>(null);
+  const { email, reviewScope, loading: accessLoading } = useAccess();
   const [emps, setEmps] = useState<Emp[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [points, setPoints] = useState<ActionPoint[]>([]);
@@ -153,12 +152,6 @@ export default function CockpitPage() {
   const [cycle, setCycle] = useState(monthStart(-1));
   const [quick, setQuick] = useState<Emp | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setEmail(session?.user?.email ?? null);
-    });
-  }, [supabase]);
 
   useEffect(() => {
     let dead = false;
@@ -220,15 +213,23 @@ export default function CockpitPage() {
   }, [cycle]);
 
   /* ---- who this user is responsible for ---- */
+  /* Super managers and admins review anyone; managers only their own line. */
   const scope = useMemo(() => {
-    if (!email) return [] as Emp[];
-    if (email === ADMIN_EMAIL) return emps;
-    const me = emps.find((e) => (e.ms_email ?? '').toLowerCase() === email.toLowerCase());
+    if (!email || reviewScope === 'none') return [] as Emp[];
+    if (reviewScope === 'all') return emps;
+
+    const local = email.split('@')[0].toLowerCase().replace(/[^a-z]/g, '');
+    const me =
+      emps.find((e) => (e.ms_email ?? '').toLowerCase() === email.toLowerCase()) ??
+      // Several managers have no ms_email, so fall back to matching the email
+      // local-part against a name token: sudha@ -> "Sudha Raghu".
+      emps.find((e) => clean(e.name).split(' ').includes(local));
+
     const myName =
       me?.name ??
       email.split('@')[0].split('.').map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
     return getReports(emps, myName);
-  }, [emps, email]);
+  }, [emps, email, reviewScope]);
 
   /* ---- per-person roll-up ---- */
   const rows = useMemo(() => {
@@ -307,7 +308,7 @@ export default function CockpitPage() {
     setTimeout(() => setToast(null), 4000);
   }
 
-  if (loading)
+  if (loading || accessLoading)
     return (
       <div className="p-8 animate-pulse space-y-4">
         <div className="h-8 w-72 bg-gray-200 rounded" />
@@ -323,7 +324,7 @@ export default function CockpitPage() {
           <h1 className="text-2xl font-bold text-gray-900">Performance Cockpit</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             {scope.length} {scope.length === 1 ? 'person' : 'people'} in your scope ·{' '}
-            {email === ADMIN_EMAIL ? 'all employees' : 'your direct and indirect reports'}
+            {reviewScope === 'all' ? 'everyone in the organisation' : 'your direct and indirect reports'}
           </p>
         </div>
         <div>
@@ -478,7 +479,9 @@ export default function CockpitPage() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
-                  Nobody reports to you in the roster, so there is nothing to review here.
+                  {reviewScope === 'none'
+                    ? 'Your role does not include performance reviews. Ask an admin to change it.'
+                    : 'Nobody reports to you in the roster, so there is nothing to review here.'}
                 </td>
               </tr>
             )}
