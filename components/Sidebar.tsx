@@ -9,27 +9,31 @@ import { cn } from '@/lib/utils';
 const ADMIN_EMAIL = 'raghu.seetharam@simpliigence.com';
 
 const MANAGER_NAV = [
-  { href: '/performance', label: 'Manager Review', icon: '📋', adminOnly: false },
+  { href: '/performance', label: 'Manager Review', icon: '📋', section: 'Performance', adminOnly: false },
 ];
 
 const NAV = [
-  { href: '/',               label: 'Dashboard',        icon: '⊞',  adminOnly: false },
-  { href: '/dossier',        label: 'HR Dossier',       icon: '👥', adminOnly: false },
-  { href: '/performance',    label: 'Performance',      icon: '📊', adminOnly: false },
-  { href: '/reports',        label: 'Reports',          icon: '📉', adminOnly: false },
-  { href: '/org-chart',      label: 'Org Chart',        icon: '🏢', adminOnly: false },
-  { href: '/onboarding',     label: 'Onboarding',       icon: '🚀', adminOnly: false },
-  { href: '/joining',        label: 'Joining Pipeline', icon: '🤝', adminOnly: false },
-  { href: '/engagement',     label: 'Engagement',       icon: '💬', adminOnly: false },
-  { href: '/policy',         label: 'Policies',         icon: '📋', adminOnly: false },
-  { href: '/actions',        label: 'Action Tracker',   icon: '✅', adminOnly: false },
-  { href: '/certifications', label: 'Certifications',   icon: '🏅', adminOnly: false },
-  { href: '/above-beyond',   label: 'Above & Beyond',   icon: '⭐', adminOnly: false },
-  { href: '/map',            label: 'World Map',        icon: '🌍', adminOnly: false },
-  { href: '/teams-sync',     label: 'Teams Sync',       icon: '💼', adminOnly: false },
-  { href: '/checklist',      label: 'Weekly Checklist', icon: '📋', adminOnly: false },
-  { href: '/admin/users',    label: 'User Management',  icon: '🔐', adminOnly: true  },
-  { href: '/admin',          label: 'Backup & Restore', icon: '🗄️', adminOnly: true  },
+  { href: '/',                 label: 'Dashboard',           icon: '⊞',  section: 'Overview',    adminOnly: false },
+
+  { href: '/dossier',          label: 'HR Dossier',          icon: '👥', section: 'People',      adminOnly: false },
+  { href: '/org-chart',        label: 'Org Chart',           icon: '🏢', section: 'People',      adminOnly: false },
+  { href: '/joining',          label: 'Joining Pipeline',    icon: '🤝', section: 'People',      adminOnly: false },
+  { href: '/engagement',       label: 'Engagement',          icon: '💬', section: 'People',      adminOnly: false },
+
+  { href: '/performance',      label: 'Performance',         icon: '📊', section: 'Performance', adminOnly: false },
+  { href: '/certifications',   label: 'Certifications',      icon: '🏅', section: 'Performance', adminOnly: false },
+  { href: '/above-beyond',     label: 'Above & Beyond',      icon: '⭐', section: 'Performance', adminOnly: false },
+
+  { href: '/timesheets',       label: 'Timesheet Analytics', icon: '⏱️', section: 'Insights',    adminOnly: false },
+  { href: '/reports',          label: 'Reports',             icon: '📉', section: 'Insights',    adminOnly: false },
+  { href: '/map',              label: 'World Map',           icon: '🌍', section: 'Insights',    adminOnly: false },
+
+  { href: '/checklist',        label: 'Weekly Checklist',    icon: '✅', section: 'Operations',  adminOnly: false },
+  { href: '/policy',           label: 'Policies',            icon: '📄', section: 'Operations',  adminOnly: false },
+  { href: '/teams-sync',       label: 'Teams Sync',          icon: '💼', section: 'Operations',  adminOnly: false },
+
+  { href: '/admin/users',      label: 'User Management',     icon: '🔐', section: 'Admin',       adminOnly: true  },
+  { href: '/admin',            label: 'Backup & Restore',    icon: '🗄️', section: 'Admin',       adminOnly: true  },
 ];
 
 export default function Sidebar() {
@@ -81,6 +85,7 @@ export default function Sidebar() {
 
   return (
     <aside className="w-60 min-h-screen bg-[#0f1e3d] text-white flex flex-col shrink-0">
+      {/* Logo */}
       <div className="p-5 border-b border-white/10">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-blue-500 flex items-center justify-center font-bold text-lg">S</div>
@@ -91,6 +96,7 @@ export default function Sidebar() {
         </div>
       </div>
 
+      {/* Logged-in user card */}
       {userEmail && (
         <div className="mx-3 mt-3 mb-1 rounded-xl bg-white/8 border border-white/10 px-3 py-2.5 flex items-center gap-3">
           <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0', avatarColour)}>
@@ -104,26 +110,36 @@ export default function Sidebar() {
         </div>
       )}
 
-      <nav className="flex-1 p-3 space-y-0.5 mt-1">
+      {/* Nav — grouped by section */}
+      <nav className="flex-1 p-3 space-y-0.5 mt-1 overflow-y-auto">
         {navItems.map((item, idx, arr) => {
-          const { href, label, icon, adminOnly } = item;
+          const { href, label, icon, section } = item;
+
+          // Exact match for /admin so it doesn't light up on /admin/users
           const active = href === '/admin'
             ? path === '/admin'
             : (path === href || (href !== '/' && path.startsWith(href)));
-          const prevItem = arr[idx - 1];
-          const showDivider = adminOnly && (!prevItem || !prevItem.adminOnly);
+
+          // Section header whenever the section changes (skip the first group)
+          const prev = arr[idx - 1];
+          const showHeader = section !== 'Overview' && (!prev || prev.section !== section);
+
           return (
             <div key={href}>
-              {showDivider && (
-                <div className="pt-2 pb-1 px-3">
-                  <div className="text-[10px] uppercase tracking-widest text-white/30 font-semibold">Admin</div>
+              {showHeader && (
+                <div className="pt-3 pb-1 px-3">
+                  <div className="text-[10px] uppercase tracking-widest text-white/30 font-semibold">
+                    {section}
+                  </div>
                 </div>
               )}
               <Link
                 href={href}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
-                  active ? 'bg-blue-600 text-white font-medium' : 'text-white/70 hover:bg-white/10 hover:text-white'
+                  active
+                    ? 'bg-blue-600 text-white font-medium'
+                    : 'text-white/70 hover:bg-white/10 hover:text-white'
                 )}
               >
                 <span className="text-base w-5 text-center">{icon}</span>
@@ -134,6 +150,7 @@ export default function Sidebar() {
         })}
       </nav>
 
+      {/* Sign out */}
       <div className="p-3 border-t border-white/10">
         <button
           onClick={signOut}
@@ -142,7 +159,7 @@ export default function Sidebar() {
           <span className="w-5 text-center">↩</span>
           Sign out
         </button>
-        <div className="text-xs text-white/30 text-center mt-2">HR Portal v1.1 · May 2026</div>
+        <div className="text-xs text-white/30 text-center mt-2">HR Portal v1.2 · Aug 2026</div>
       </div>
     </aside>
   );
