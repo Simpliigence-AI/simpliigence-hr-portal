@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
-import { sendDocumentForSignature, getSigningStatus, SignaturePlacement } from '@/lib/zoho-sign';
+import { sendDocumentForSignature, getSigningStatus, downloadSignedPdf, SignaturePlacement } from '@/lib/zoho-sign';
 import { generateOfferLetter, generateExperienceLetter, generateIncrementLetter } from '@/lib/letter-templates';
 import { renderContractPdf } from '@/lib/render-pdf';
 
@@ -123,13 +124,71 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ document: doc, signingUrl: zohoResult.signingUrl });
 }
 
+// Service-role client — storage writes and employee_documents inserts must run
+// server-side regardless of the caller's RLS session (same pattern as teams-sync).
+function adminSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+}
+
+// Auto-archive: pull the signed PDF from Zoho and file it exactly like a manual
+// upload — employee-documents storage bucket + employee_documents row — so it
+// appears in the dossier Documents tab. Idempotent: the storage path embeds the
+// tracking-row id, and we skip if a row for this letter already exists.
+async function archiveSignedPdf(
+  documentId: string,
+  doc: { employee_id: string; title: string; zoho_request_id: string },
+): Promise<void> {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY not configured');
+  }
+  const admin = adminSupabase();
+
+  // Already archived? (deterministic path marker: {documentId}-signed-)
+  const { data: existing } = await admin
+    .from('employee_documents')
+    .select('id')
+    .eq('employee_id', doc.employee_id)
+    .like('url', `%${documentId}-signed-%`)
+    .limit(1);
+  if (existing?.length) return;
+
+  const pdf = await downloadSignedPdf(doc.zoho_request_id);
+
+  const slug = (doc.title || 'letter')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'letter';
+  const path = `${doc.employee_id}/${documentId}-signed-${slug}.pdf`;
+
+  const { error: upErr } = await admin.storage
+    .from('employee-documents')
+    .upload(path, pdf, { contentType: 'application/pdf', upsert: true });
+  if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
+
+  const { data: { publicUrl } } = admin.storage.from('employee-documents').getPublicUrl(path);
+
+  const { error: insErr } = await admin.from('employee_documents').insert({
+    employee_id:    doc.employee_id,
+    name:           `Signed - ${doc.title}.pdf`,
+    doc_type:       'Signed Letter',
+    url:            publicUrl,
+    sharepoint_url: null,
+  });
+  if (insErr) throw new Error(`employee_documents insert failed: ${insErr.message}`);
+}
+
 // PATCH /api/documents  — sync status from Zoho
 export async function PATCH(req: NextRequest) {
   const { documentId } = await req.json();
   if (!documentId) return NextResponse.json({ error: 'Missing documentId' }, { status: 400 });
 
   const supabase = serverSupabase();
-  const { data: doc } = await supabase.from('documents').select('zoho_request_id').eq('id', documentId).single();
+  const { data: doc } = await supabase
+    .from('documents')
+    .select('zoho_request_id, employee_id, title')
+    .eq('id', documentId)
+    .single();
   if (!doc?.zoho_request_id) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const zohoStatus = await getSigningStatus(doc.zoho_request_id);
@@ -148,5 +207,20 @@ export async function PATCH(req: NextRequest) {
   if (newStatus === 'signed') update.signed_at = new Date().toISOString();
 
   await supabase.from('documents').update(update).eq('id', documentId);
-  return NextResponse.json({ status: newStatus });
+
+  // On completion, archive the signed PDF into the employee's Documents tab.
+  // Non-fatal: an archive failure must never break the status sync.
+  let archived = false;
+  let warning: string | undefined;
+  if (newStatus === 'signed') {
+    try {
+      await archiveSignedPdf(documentId, doc);
+      archived = true;
+    } catch (e) {
+      warning = `Status updated, but archiving the signed PDF failed: ${(e as Error).message}`;
+      console.error('[documents] auto-archive failed:', e);
+    }
+  }
+
+  return NextResponse.json({ status: newStatus, archived, ...(warning ? { warning } : {}) });
 }
