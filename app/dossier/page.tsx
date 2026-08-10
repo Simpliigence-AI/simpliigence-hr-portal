@@ -23,7 +23,7 @@ const COL_DEFS: ColDef[] = [
   { key: 'role',        label: 'Role',          def: true,  editable: true },
   { key: 'dept',        label: 'Department',    def: true,  editable: true, type: 'select', opts: DEPTS },
   { key: 'location',    label: 'Location',      def: false, editable: true },
-  { key: 'region',      label: 'Region',        def: true,  editable: true, type: 'select', opts: ['India','USA','Canada'] },
+  { key: 'region',      label: 'Region',        def: true,  editable: true, type: 'select', opts: ['India','USA','UK','Canada'] },
   { key: 'manager',     label: 'Manager',       def: true,  editable: true },
   { key: 'wfo',         label: 'Work Mode',     def: false, editable: true, type: 'select', opts: WFO_OPTS },
   { key: 'type',        label: 'Type',          def: true  },
@@ -409,7 +409,7 @@ function DossierInner() {
   // ── List cell renderers ────────────────────────────────────────
   function renderListCell(e: Employee, key: string) {
     const isC = isContractor(e);
-    const flag = e.region === 'India' ? '🇮🇳' : e.region === 'USA' ? '🇺🇸' : e.region === 'Canada' ? '🇨🇦' : '';
+    const flag = e.region === 'India' ? '🇮🇳' : e.region === 'USA' ? '🇺🇸' : e.region === 'UK' ? '🇬🇧' : e.region === 'Canada' ? '🇨🇦' : '';
     switch (key) {
       case 'name':
         return (
@@ -481,6 +481,7 @@ function DossierInner() {
     exEmployee:  employees.filter(isEx).length,
     india:       employees.filter(e => e.region === 'India').length,
     usa:         employees.filter(e => e.region === 'USA').length,
+    uk:         employees.filter(e => e.region === 'UK').length,
     canada:      employees.filter(e => e.region === 'Canada').length,
   };
 
@@ -495,6 +496,7 @@ function DossierInner() {
     { label: 'All Regions', value: 'All',    flag: '🌍', count: counts.all },
     { label: 'India',       value: 'India',  flag: '🇮🇳', count: counts.india },
     { label: 'USA',         value: 'USA',    flag: '🇺🇸', count: counts.usa },
+    { label: 'UK',         value: 'UK',    flag: '🇬🇧', count: counts.uk   },
     ...(counts.canada > 0 ? [{ label: 'Canada', value: 'Canada', flag: '🇨🇦', count: counts.canada }] : []),
   ];
 
@@ -599,7 +601,7 @@ function DossierInner() {
             const { label, cls } = statusBadge(e as never);
             const isC = isContractor(e);
             const isE = isEx(e);
-            const regionFlag = e.region === 'India' ? '🇮🇳' : e.region === 'USA' ? '🇺🇸' : e.region === 'Canada' ? '🇨🇦' : '';
+            const regionFlag = e.region === 'India' ? '🇮🇳' : e.region === 'USA' ? '🇺🇸' : e.region === 'UK' ? '🇬🇧' : e.region === 'Canada' ? '🇨🇦' : '';
             const bdayDays = (() => {
               const b = (e as never as {birthday:string|null}).birthday;
               if (!b) return null;
@@ -796,7 +798,7 @@ function DossierInner() {
                     <label className="text-xs font-semibold text-gray-500 mb-1 block">Region</label>
                     <select value={newEmpForm.region ?? 'India'} onChange={NF('region')}
                       className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-400 bg-white">
-                      {['India','USA','Canada'].map(r => <option key={r}>{r}</option>)}
+                      {['India','USA','UK','Canada'].map(r => <option key={r}>{r}</option>)}
                     </select>
                   </div>
                   <div>
