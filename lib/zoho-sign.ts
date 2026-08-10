@@ -395,3 +395,26 @@ export async function getSigningStatus(requestId: string): Promise<ZohoSignStatu
   const json = await res.json() as Record<string, Record<string, string>>;
   return (json.requests?.request_status ?? 'inprogress') as ZohoSignStatus;
 }
+
+// ---------------------------------------------------------------------------
+// Download the signed (completed) PDF of a request
+// ---------------------------------------------------------------------------
+export async function downloadSignedPdf(requestId: string): Promise<Buffer> {
+  const token = await getZohoAccessToken();
+
+  let res: Response;
+  try {
+    res = await fetch(`${SIGN_API}/requests/${requestId}/pdf`, {
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+    });
+  } catch (err) {
+    throw new Error(`Signed PDF download network error: ${(err as Error).message}`);
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Zoho signed PDF download failed (HTTP ${res.status}): ${body.slice(0, 300)}`);
+  }
+
+  return Buffer.from(await res.arrayBuffer());
+}

@@ -508,14 +508,48 @@ export default function DocumentsPanel({ employee }: { employee: Employee }) {
 
   useEffect(() => { load(); }, [load]);
 
-  async function syncStatus(docId: string) {
-    await fetch('/api/documents', {
+  async function syncOne(docId: string): Promise<{ status?: string; archived?: boolean; warning?: string }> {
+    const r = await fetch('/api/documents', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ documentId: docId }),
     });
+    return r.json();
+  }
+
+  async function syncStatus(docId: string) {
+    const j = await syncOne(docId);
+    if (j.warning) console.warn('[documents]', j.warning);
+    if (j.status === 'signed' && j.archived) {
+      setSuccess('✅ Letter signed — the signed PDF was saved to the Documents tab.');
+    }
     load();
   }
+
+  // Auto-sync on load: once per mount, refresh any letters still awaiting signature
+  // so completed ones flip to "signed" (and their signed PDF gets archived) without
+  // anyone clicking ↻ Sync. Sequential — one Zoho poll at a time; the ref prevents
+  // re-running when load() refreshes the list.
+  const autoSynced = useRef(false);
+  useEffect(() => {
+    if (loading || autoSynced.current) return;
+    autoSynced.current = true;
+    const pending = docs.filter(d => d.status === 'sent');
+    if (!pending.length) return;
+    (async () => {
+      let anyArchived = false;
+      for (const d of pending) {
+        try {
+          const j = await syncOne(d.id);
+          if (j.warning) console.warn('[documents]', j.warning);
+          if (j.status === 'signed' && j.archived) anyArchived = true;
+        } catch { /* non-fatal — leave status as-is */ }
+      }
+      if (anyArchived) setSuccess('✅ Letter signed — the signed PDF was saved to the Documents tab.');
+      load();
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, docs]);
 
   async function sendSimple() {
     setError('');
