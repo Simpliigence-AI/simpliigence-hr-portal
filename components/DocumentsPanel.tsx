@@ -466,7 +466,7 @@ function OfferLetterModal({
    MAIN DOCUMENTS PANEL
 ═══════════════════════════════════════════════════════════════════════════ */
 
-export default function DocumentsPanel({ employee }: { employee: Employee }) {
+export default function DocumentsPanel({ employee, onArchived }: { employee: Employee; onArchived?: () => void }) {
   const [docs,       setDocs]       = useState<Doc[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [modal,      setModal]      = useState(false);
@@ -474,6 +474,7 @@ export default function DocumentsPanel({ employee }: { employee: Employee }) {
   const [sending,    setSending]    = useState(false);
   const [error,      setError]      = useState('');
   const [success,    setSuccess]    = useState('');
+  const [warning,    setWarning]    = useState('');
   const [showOffer,  setShowOffer]  = useState(false);
 
   // Simple modal fields for experience/increment
@@ -519,9 +520,10 @@ export default function DocumentsPanel({ employee }: { employee: Employee }) {
 
   async function syncStatus(docId: string) {
     const j = await syncOne(docId);
-    if (j.warning) console.warn('[documents]', j.warning);
+    if (j.warning) { console.warn('[documents]', j.warning); setWarning(j.warning); }
     if (j.status === 'signed' && j.archived) {
       setSuccess('✅ Letter signed — the signed PDF was saved to the Documents tab.');
+      onArchived?.();
     }
     load();
   }
@@ -541,11 +543,14 @@ export default function DocumentsPanel({ employee }: { employee: Employee }) {
       for (const d of pending) {
         try {
           const j = await syncOne(d.id);
-          if (j.warning) console.warn('[documents]', j.warning);
+          if (j.warning) { console.warn('[documents]', j.warning); setWarning(j.warning); }
           if (j.status === 'signed' && j.archived) anyArchived = true;
         } catch { /* non-fatal — leave status as-is */ }
       }
-      if (anyArchived) setSuccess('✅ Letter signed — the signed PDF was saved to the Documents tab.');
+      if (anyArchived) {
+        setSuccess('✅ Letter signed — the signed PDF was saved to the Documents tab.');
+        onArchived?.();
+      }
       load();
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -611,7 +616,7 @@ export default function DocumentsPanel({ employee }: { employee: Employee }) {
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold text-gray-800">HR Letters & e-Signature</h3>
         <button
-          onClick={() => { setModal(true); setError(''); setSuccess(''); }}
+          onClick={() => { setModal(true); setError(''); setSuccess(''); setWarning(''); }}
           className="flex items-center gap-1.5 bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-blue-700"
         >
           ＋ Generate Letter
@@ -621,6 +626,12 @@ export default function DocumentsPanel({ employee }: { employee: Employee }) {
       {success && (
         <div className="mb-4 bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3">
           {success}
+        </div>
+      )}
+
+      {warning && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-4 py-3">
+          ⚠️ {warning}
         </div>
       )}
 

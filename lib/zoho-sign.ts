@@ -416,5 +416,14 @@ export async function downloadSignedPdf(requestId: string): Promise<Buffer> {
     throw new Error(`Zoho signed PDF download failed (HTTP ${res.status}): ${body.slice(0, 300)}`);
   }
 
-  return Buffer.from(await res.arrayBuffer());
+  const pdf = Buffer.from(await res.arrayBuffer());
+
+  // A 200 from Zoho is not necessarily a PDF (it can be an HTML/JSON error body).
+  // Validate the %PDF magic bytes so we never archive a non-PDF as a signed letter.
+  if (pdf.subarray(0, 4).toString('latin1') !== '%PDF') {
+    const preview = pdf.subarray(0, 60).toString('latin1').replace(/[^\x20-\x7e]/g, '.');
+    throw new Error(`Zoho signed PDF download returned a non-PDF body (starts with: ${preview})`);
+  }
+
+  return pdf;
 }
