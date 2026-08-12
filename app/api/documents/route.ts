@@ -137,22 +137,25 @@ function adminSupabase() {
 // upload — employee-documents storage bucket + employee_documents row — so it
 // appears in the dossier Documents tab. Idempotent: the storage path embeds the
 // tracking-row id, and we skip if a row for this letter already exists.
+// Returns a warning string when archiving succeeded but something non-fatal
+// went wrong along the way (currently: the idempotency check erroring).
 async function archiveSignedPdf(
   documentId: string,
   doc: { employee_id: string; title: string; zoho_request_id: string },
-): Promise<void> {
+): Promise<string | undefined> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY not configured');
   }
   const admin = adminSupabase();
 
   // Already archived? (deterministic path marker: {documentId}-signed-)
-  const { data: existing } = await admin
+  const { data: existing, error: selErr } = await admin
     .from('employee_documents')
     .select('id')
     .eq('employee_id', doc.employee_id)
     .like('url', `%${documentId}-signed-%`)
     .limit(1);
+  if (selErr) console.error('[documents] archive idempotency check failed:', selErr.message);
   if (existing?.length) return;
 
   const pdf = await downloadSignedPdf(doc.zoho_request_id);
@@ -166,16 +169,20 @@ async function archiveSignedPdf(
     .upload(path, pdf, { contentType: 'application/pdf', upsert: true });
   if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
 
-  const { data: { publicUrl } } = admin.storage.from('employee-documents').getPublicUrl(path);
-
+  // Store the bare storage path — the bucket is private, so the file is served via
+  // /api/documents/file (short-lived signed URL), not a raw public object URL.
   const { error: insErr } = await admin.from('employee_documents').insert({
     employee_id:    doc.employee_id,
     name:           `Signed - ${doc.title}.pdf`,
     doc_type:       'Signed Letter',
-    url:            publicUrl,
+    url:            path,
     sharepoint_url: null,
   });
   if (insErr) throw new Error(`employee_documents insert failed: ${insErr.message}`);
+
+  return selErr
+    ? `Signed PDF archived, but the duplicate-check query failed (${selErr.message}) — a duplicate copy may have been filed.`
+    : undefined;
 }
 
 // PATCH /api/documents  — sync status from Zoho
@@ -214,7 +221,7 @@ export async function PATCH(req: NextRequest) {
   let warning: string | undefined;
   if (newStatus === 'signed') {
     try {
-      await archiveSignedPdf(documentId, doc);
+      warning = await archiveSignedPdf(documentId, doc);
       archived = true;
     } catch (e) {
       warning = `Status updated, but archiving the signed PDF failed: ${(e as Error).message}`;

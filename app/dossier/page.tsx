@@ -224,8 +224,9 @@ function DossierInner() {
     const path = `${selected.id}/${Date.now()}-${file.name}`;
     const { error } = await supabase.storage.from('employee-documents').upload(path, file);
     if (!error) {
-      const { data: { publicUrl } } = supabase.storage.from('employee-documents').getPublicUrl(path);
-      const row = { employee_id: selected.id, name: file.name, doc_type: newDocForm.doc_type, url: publicUrl, sharepoint_url: null };
+      // Store the bare storage path — the bucket is private, so files are opened via
+      // /api/documents/file (signed URL), not a raw public object URL.
+      const row = { employee_id: selected.id, name: file.name, doc_type: newDocForm.doc_type, url: path, sharepoint_url: null };
       const { data } = await supabase.from('employee_documents').insert(row).select().single();
       if (data) setDocs(d => [data, ...d]);
     }
@@ -242,7 +243,10 @@ function DossierInner() {
   async function deleteDoc(docId: string, url: string | null) {
     await supabase.from('employee_documents').delete().eq('id', docId);
     if (url) {
-      const path = url.split('/employee-documents/')[1];
+      // url is either a legacy full public object URL or (newer rows) a bare storage path.
+      const path = url.includes('/employee-documents/')
+        ? url.split('/employee-documents/')[1]
+        : (/^https?:\/\//i.test(url) ? null : url);
       if (path) await supabase.storage.from('employee-documents').remove([path]);
     }
     setDocs(d => d.filter(x => x.id !== docId));
@@ -1184,7 +1188,7 @@ function DossierInner() {
                             <div className="text-xs text-gray-400">{doc.doc_type} · {new Date(doc.created_at).toLocaleDateString()}</div>
                           </div>
                           {(doc.url || doc.sharepoint_url) && (
-                            <a href={doc.url ?? doc.sharepoint_url ?? '#'} target="_blank" rel="noreferrer"
+                            <a href={doc.url ? `/api/documents/file?id=${doc.id}` : doc.sharepoint_url ?? '#'} target="_blank" rel="noreferrer"
                               className="text-xs text-blue-600 hover:underline shrink-0">Open ↗</a>
                           )}
                           <button onClick={() => deleteDoc(doc.id, doc.url)}
@@ -1207,7 +1211,7 @@ function DossierInner() {
                       salary:           (selected as never as {salary?: number}).salary,
                       email:            (selected as never as {email?: string}).email,
                       termination_date: (selected as never as {termination_date?: string}).termination_date,
-                    }} />
+                    }} onArchived={() => loadDocs(selected.id)} />
                   </div>
                 </div>
               )}
