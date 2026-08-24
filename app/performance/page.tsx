@@ -1,7 +1,7 @@
 'use client'
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import DetailedTemplate from './DetailedTemplate'
+import DetailedTemplate, { CONTRACTOR_FIELDS } from './DetailedTemplate'
 import ActionPoints from './ActionPoints'
 import { calculateScore, calculateTrend, generateActionPoints, type TrendDirection } from '@/lib/scoring'
 
@@ -193,6 +193,7 @@ export default function PerformancePage() {
       overall_feedback: r.overall_feedback ?? '',
       review_template: r.review_template ?? 'standard',
       detailed_answers: {
+        ...(r.detailed_data ?? {}),
         role_fitment: r.role_fitment ?? '', delivery: r.delivery ?? '',
         quality_speed: r.quality_speed ?? '', updating_skills: r.updating_skills ?? '',
         ownership: r.ownership ?? '', accountability: r.accountability ?? '',
@@ -218,7 +219,7 @@ export default function PerformancePage() {
       targets: form.targets || null, achievements: form.achievements || null,
       overall_feedback: form.overall_feedback || null,
       review_template: form.review_template,
-      detailed_data: form.review_template === 'detailed' ? a : null,
+      detailed_data: form.review_template === 'standard' ? null : a,
       composite_score: score,
       role_fitment: a.role_fitment || null, delivery: a.delivery || null,
       quality_speed: a.quality_speed || null, updating_skills: a.updating_skills || null,
@@ -291,6 +292,15 @@ export default function PerformancePage() {
 
   function toggleScores(id: string) {
     setExpandedScores(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+
+  // Contractor answers live in the detailed_data jsonb blob (no dedicated columns),
+  // labelled here with the same labels the form uses.
+  function contractorRows(data: Record<string,string> | null) {
+    if (!data) return []
+    return CONTRACTOR_FIELDS
+      .map(f => ({ id: f.id, label: f.label, value: String(data[f.id] ?? '').trim() }))
+      .filter(row => row.value !== '')
   }
 
   function reviewAnswers(r: Review): Record<string, string|null|undefined> {
@@ -416,6 +426,7 @@ export default function PerformancePage() {
                     const isApOpen = apReviewId === r.id
                     const isScoreExpanded = expandedScores.has(r.id)
                     const ans = reviewAnswers(r)
+                    const cRows = r.review_template === 'contractor' ? contractorRows(r.detailed_data) : []
                     return (
                       <div key={r.id} className="bg-white rounded-xl border hover:shadow-sm transition-shadow">
                         <div className="p-4">
@@ -427,10 +438,16 @@ export default function PerformancePage() {
                             </div>
                             <div className="flex items-center gap-2 flex-wrap">
                               {r.review_template === 'detailed' && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">Detailed</span>}
+                              {r.review_template === 'contractor' && <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full font-medium">Contractor</span>}
                               {r.mood && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{r.mood}</span>}
                               {r.composite_score != null && (
                                 <button onClick={() => toggleScores(r.id)} className="text-xs text-indigo-500 hover:underline">
                                   {isScoreExpanded ? 'Hide scores' : 'View scores'}
+                                </button>
+                              )}
+                              {cRows.length > 0 && (
+                                <button onClick={() => toggleScores(r.id)} className="text-xs text-indigo-500 hover:underline">
+                                  {isScoreExpanded ? 'Hide details' : 'View details'}
                                 </button>
                               )}
                               <button onClick={() => setApReviewId(isApOpen ? null : r.id)}
@@ -448,6 +465,16 @@ export default function PerformancePage() {
                             <div className="mt-3 pt-3 border-t border-gray-50">
                               {CAT_FIELDS.map(cat => (
                                 <ScoreBar key={cat.label} label={cat.label} score={catScore(cat.fields, ans)} />
+                              ))}
+                            </div>
+                          )}
+                          {isScoreExpanded && cRows.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-gray-50 space-y-1.5">
+                              {cRows.map(row => (
+                                <div key={row.id} className="flex gap-2 text-xs">
+                                  <span className="text-gray-400 w-44 shrink-0">{row.label}</span>
+                                  <span className="text-gray-600 whitespace-pre-wrap flex-1">{row.value}</span>
+                                </div>
                               ))}
                             </div>
                           )}
