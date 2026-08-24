@@ -29,7 +29,7 @@ const CONTRACTOR_SECTIONS = [
 
 type CField = { id: string; sec: string; label: string; kind: 'text' | 'area' | 'date' | 'select'; opts?: string[]; wide?: boolean }
 
-const CONTRACTOR_FIELDS: CField[] = [
+export const CONTRACTOR_FIELDS: CField[] = [
   { id: 'c_project',        sec: '1. Engagement context', label: 'Project / account', kind: 'text' },
   { id: 'c_client_manager', sec: '1. Engagement context', label: 'Reporting manager (client side)', kind: 'text' },
   { id: 'c_simplii_manager',sec: '1. Engagement context', label: 'Simpliigence manager', kind: 'text' },
