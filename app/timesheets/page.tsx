@@ -22,7 +22,7 @@ type Person = {
 
 type Project = { name: string; category: string };
 
-/** [personIdx, workDate, projectIdx, hours, billable, source] */
+/** [personIdx, workDate, projectIdx, hours, billable, source (always cockpit)] */
 type Entry = [number, string, number, number, 0 | 1, 0 | 1];
 
 type Payload = {
@@ -33,7 +33,6 @@ type Payload = {
     generatedAt: string;
     counts: Record<string, number>;
     dateRange: { min: string | null; max: string | null };
-    internalError: string | null;
     timesheetError?: string | null;
     employeeError?: string | null;
   };
@@ -676,7 +675,7 @@ export default function TimesheetsPage() {
         </div>
       </div>
 
-      {[data.meta.timesheetError, data.meta.employeeError, data.meta.internalError]
+      {[data.meta.timesheetError, data.meta.employeeError]
         .filter(Boolean)
         .map((msg) => (
           <div
@@ -1364,7 +1363,7 @@ export default function TimesheetsPage() {
                     data.projects[e[2]].category,
                     e[3],
                     e[4] ? 'Billable' : 'Non-billable',
-                    e[5] ? 'Internal' : 'Zoho',
+                    'Cockpit',
                   ]),
                 ])
               }
@@ -1489,8 +1488,9 @@ export default function TimesheetsPage() {
       )}
 
       <p className="text-xs text-gray-400 mt-6">
-        Source: Zoho People actual hours synced into the delivery dashboard, joined to the HR
-        roster. Capacity assumes 8 h × Mon–Fri and does not deduct public holidays or approved
+        Source: submitted time entries from the delivery cockpit&rsquo;s my-time screen, joined to
+        the HR roster. Drafts are excluded. Billable/non-billable follows the flag as entered in the
+        cockpit. Capacity assumes 8 h × Mon–Fri and does not deduct public holidays or approved
         leave, so utilisation is a floor rather than an exact figure.
       </p>
     </div>

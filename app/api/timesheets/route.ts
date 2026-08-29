@@ -9,17 +9,17 @@ export const maxDuration = 60;
 /* Config                                                              */
 /* ------------------------------------------------------------------ */
 
-// Delivery dashboard Supabase ("Project Planner") — holds the timesheets.
-// Both actual_hours and time_entries need DELIVERY_SUPABASE_SERVICE_KEY: in that
-// project `anon` holds no grants on either table (only `authenticated` and
-// `service_role`), so the anon key returns 42501 "permission denied". It is used
-// only as a last-resort fallback so a missing env var degrades to a visible
-// warning rather than a blank page.
+// Delivery dashboard Supabase ("Project Planner"), where the delivery cockpit
+// writes the time entries people entered in its my-time screen. That is the
+// single source of truth for hours.
+//
+// Reading it needs DELIVERY_SUPABASE_SERVICE_KEY. time_entries carries RLS
+// policies for `authenticated` only (own rows / reports / admin), so the anon
+// key returns an empty list rather than an error — silently zero hours. The
+// HR portal's own signed-in session is no help either: it is a JWT for a
+// different Supabase project.
 const DELIVERY_URL =
   process.env.DELIVERY_SUPABASE_URL ?? 'https://mhmxlubithnidopmkwgt.supabase.co';
-const DELIVERY_ANON =
-  process.env.DELIVERY_SUPABASE_ANON_KEY ??
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1obXhsdWJpdGhuaWRvcG1rd2d0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4OTg0NzksImV4cCI6MjA5MDQ3NDQ3OX0.pL-EEzCpcWh8pjCYFRKx_jiSUvfe0JvB2sJD_QaOWwY';
 const DELIVERY_SERVICE = process.env.DELIVERY_SUPABASE_SERVICE_KEY ?? '';
 
 const HR_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -76,11 +76,31 @@ function normProject(raw: string | null | undefined): string {
     .join(' ');
 }
 
-/* Rules are ordered — first match wins. Tuned against the actual Zoho task
-   labels; see the note on "KPI", which at Simpliigence denotes an upskilling
-   assignment rather than a metric. Roughly 8% of non-billable hours stay
-   uncategorised because the labels themselves say nothing ("Daily task",
-   "Others"), which the Diagnostics view surfaces rather than hides. */
+/* The delivery cockpit offers a fixed set of "Internal — …" project labels
+   alongside free-typed client names. Those fixed labels are unambiguous, so
+   they are matched FIRST — before the billable shortcut in categorise() —
+   because a meaningful number of them are logged with billable ticked by
+   mistake (Leave / PTO, Holiday and Internal — Training all appear with
+   billable=true). Honouring the flag over an explicit "Leave / PTO" label
+   would file leave under Delivery / Project and hide the error.
+   Note: this only fixes the work-type breakdown. The billable/non-billable
+   totals still reflect the flag as entered — that is the cockpit's data to
+   correct, not this route's. */
+const EXPLICIT_RULES: [string, RegExp][] = [
+  ['Leave / Holiday',    /^(leave\s*\/\s*pto|holiday|internal\s*—\s*leave)$/i],
+  ['Bench / Idle',       /^internal\s*—\s*bench$/i],
+  ['Learning / Upskill', /^(internal\s*—\s*training|learning|kpi)$/i],
+  // Explicitly internal work, whatever the billable flag says — it is not
+  // client delivery. Diagnostics surfaces it so the label can be improved.
+  ['Other / Uncategorised', /^internal\s*—\s*other$/i],
+];
+
+/* Rules are ordered — first match wins. Originally tuned against the Zoho task
+   labels and still useful for free-typed cockpit project names; see the note on
+   "KPI", which at Simpliigence denotes an upskilling assignment rather than a
+   metric. Some hours stay uncategorised because the labels themselves say
+   nothing ("Internal — Other"), which the Diagnostics view surfaces rather
+   than hides. */
 const CATEGORY_RULES: [string, RegExp][] = [
   ['Leave / Holiday',       /\b(leave|holiday|pto|vacation|sick|comp\s?off|week\s?off|team outing)\b/i],
   ['Bench / Idle',          /\b(bench|idle|no\s?work|shadow|buffer|unallocated)\b/i],
@@ -95,6 +115,10 @@ const CATEGORY_RULES: [string, RegExp][] = [
 ];
 
 function categorise(project: string, billable: boolean): string {
+  const p = project.trim();
+  for (const [label, re] of EXPLICIT_RULES) {
+    if (re.test(p)) return label;
+  }
   if (billable) return 'Delivery / Project';
   for (const [label, re] of CATEGORY_RULES) {
     if (re.test(project)) return label;
@@ -108,37 +132,26 @@ function categorise(project: string, billable: boolean): string {
 
 export async function GET() {
   try {
-    /* ---- 1. Timesheets: Zoho actual_hours (needs service key) ---- */
-    let actual: any[] = [];
-    let timesheetError: string | null = null;
-    try {
-      actual = await fetchAll(
-        DELIVERY_URL,
-        DELIVERY_SERVICE || DELIVERY_ANON,
-        'actual_hours?select=email,employee_name,project,work_date,hours,billing&order=work_date.asc',
-      );
-    } catch (e: any) {
-      timesheetError = DELIVERY_SERVICE
-        ? (e?.message ?? 'actual_hours fetch failed')
-        : 'DELIVERY_SUPABASE_SERVICE_KEY not set — Zoho timesheet hours excluded '
-          + '(the anon key has no grants on actual_hours)';
-    }
-
-    /* ---- 2. Timesheets: internal time_entries (needs service key) ---- */
+    /* ---- 1+2. Timesheets: delivery cockpit time_entries --------------
+       Only submitted (or approved) entries count; drafts are still being
+       edited by the person and are excluded from every total. */
     let internal: any[] = [];
-    let internalError: string | null = null;
+    let timesheetError: string | null = null;
     if (DELIVERY_SERVICE) {
       try {
         internal = await fetchAll(
           DELIVERY_URL,
           DELIVERY_SERVICE,
-          'time_entries?select=employee_email,work_date,project_name,hours,billable,status&order=work_date.asc',
+          'time_entries?select=employee_email,work_date,project_name,hours,billable,status'
+            + '&status=in.(submitted,approved)&order=work_date.asc',
         );
       } catch (e: any) {
-        internalError = e?.message ?? 'time_entries fetch failed';
+        timesheetError = e?.message ?? 'time_entries fetch failed';
       }
     } else {
-      internalError = 'DELIVERY_SUPABASE_SERVICE_KEY not set — internal time entries excluded';
+      timesheetError =
+        'DELIVERY_SUPABASE_SERVICE_KEY not set — no timesheet hours available. '
+        + 'Set it in Vercel to the delivery dashboard project\u2019s service-role key.';
     }
 
     /* ---- 3. HR portal employee master ------------------------------
@@ -307,24 +320,11 @@ export async function GET() {
       return i;
     };
 
-    // entry = [personIdx, workDate, projectIdx, hours, billable(0|1), source(0=zoho,1=internal)]
+    // entry = [personIdx, workDate, projectIdx, hours, billable(0|1), source(1=cockpit)]
+    // The source slot is retained so the payload shape stays stable for the
+    // page; every entry now comes from the cockpit.
     type Entry = [number, string, number, number, 0 | 1, 0 | 1];
     const entries: Entry[] = [];
-
-    for (const r of actual) {
-      const hours = Number(r.hours) || 0;
-      if (!hours) continue;
-      const billable = String(r.billing ?? '').toLowerCase() === 'billable';
-      const proj = normProject(r.project);
-      entries.push([
-        personIndex(String(r.email ?? '').toLowerCase(), r.employee_name ?? ''),
-        String(r.work_date),
-        projectIndex(proj, billable),
-        hours,
-        billable ? 1 : 0,
-        0,
-      ]);
-    }
 
     for (const r of internal) {
       const hours = Number(r.hours) || 0;
@@ -384,12 +384,10 @@ export async function GET() {
             entries: entries.length,
             people: people.length,
             projects: projects.length,
-            zohoRows: actual.length,
-            internalRows: internal.length,
+            timesheetRows: internal.length,
             employeesMatched: people.filter((p) => p.matched).length,
           },
           dateRange: { min: dates[0] ?? null, max: dates[dates.length - 1] ?? null },
-          internalError,
           timesheetError,
           employeeError,
         },
