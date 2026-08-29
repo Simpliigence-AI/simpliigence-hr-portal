@@ -1,6 +1,4 @@
-import { supabase } from '@/lib/supabase';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { getServerSupabase } from '@/lib/supabase-server';
 import { formatDate, getDeptColor, isVisaExpiringSoon, tenureYears } from '@/lib/utils';
 import Link from 'next/link';
 import Avatar from '@/components/Avatar';
@@ -10,12 +8,7 @@ export const revalidate = 0;
 
 async function getLoggedInName(): Promise<string | null> {
   try {
-    const cookieStore = await cookies();
-    const serverSupabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      { cookies: { getAll: () => cookieStore.getAll() } },
-    );
+    const serverSupabase = await getServerSupabase();
     const { data: { user } } = await serverSupabase.auth.getUser();
     if (!user?.email) return null;
     return user.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
@@ -31,6 +24,7 @@ function getNextBirthday(birthdayStr: string): Date {
 }
 
 async function getStats() {
+  const supabase = await getServerSupabase();
   const [{ data: activeData }, { data: allData }] = await Promise.all([
     supabase.from('employees').select('*').eq('active', true),
     supabase.from('employees').select('id,active,status,region,joined,visa_expiry,visa,location,wfo,name,role,photo_url,dept'),
