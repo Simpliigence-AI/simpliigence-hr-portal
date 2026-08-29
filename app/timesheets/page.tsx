@@ -34,6 +34,8 @@ type Payload = {
     counts: Record<string, number>;
     dateRange: { min: string | null; max: string | null };
     internalError: string | null;
+    timesheetError?: string | null;
+    employeeError?: string | null;
   };
 };
 
@@ -674,11 +676,16 @@ export default function TimesheetsPage() {
         </div>
       </div>
 
-      {data.meta.internalError && (
-        <div className="mb-4 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
-          {data.meta.internalError}
-        </div>
-      )}
+      {[data.meta.timesheetError, data.meta.employeeError, data.meta.internalError]
+        .filter(Boolean)
+        .map((msg) => (
+          <div
+            key={msg as string}
+            className="mb-4 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2"
+          >
+            {msg}
+          </div>
+        ))}
 
       {/* ---------- Filters ---------- */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">

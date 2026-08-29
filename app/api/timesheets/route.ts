@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -8,8 +10,11 @@ export const maxDuration = 60;
 /* ------------------------------------------------------------------ */
 
 // Delivery dashboard Supabase ("Project Planner") — holds the timesheets.
-// actual_hours has a public read policy, so the anon key is sufficient.
-// Set DELIVERY_SUPABASE_SERVICE_KEY in Vercel to additionally pull time_entries.
+// Both actual_hours and time_entries need DELIVERY_SUPABASE_SERVICE_KEY: in that
+// project `anon` holds no grants on either table (only `authenticated` and
+// `service_role`), so the anon key returns 42501 "permission denied". It is used
+// only as a last-resort fallback so a missing env var degrades to a visible
+// warning rather than a blank page.
 const DELIVERY_URL =
   process.env.DELIVERY_SUPABASE_URL ?? 'https://mhmxlubithnidopmkwgt.supabase.co';
 const DELIVERY_ANON =
@@ -30,13 +35,17 @@ async function fetchAll(
   base: string,
   key: string,
   path: string,
+  /** Bearer token to authorise as, when it differs from the project apikey —
+   *  e.g. a signed-in user's access token, so the query runs as
+   *  `authenticated` rather than `anon`. */
+  bearer: string = key,
 ): Promise<any[]> {
   const rows: any[] = [];
   for (let offset = 0; offset < 60000; offset += PAGE) {
     const sep = path.includes('?') ? '&' : '?';
     const url = `${base}/rest/v1/${path}${sep}limit=${PAGE}&offset=${offset}`;
     const res = await fetch(url, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      headers: { apikey: key, Authorization: `Bearer ${bearer}` },
       cache: 'no-store',
     });
     if (!res.ok) {
@@ -99,12 +108,21 @@ function categorise(project: string, billable: boolean): string {
 
 export async function GET() {
   try {
-    /* ---- 1. Timesheets: Zoho actual_hours (public read) ---- */
-    const actual = await fetchAll(
-      DELIVERY_URL,
-      DELIVERY_ANON,
-      'actual_hours?select=email,employee_name,project,work_date,hours,billing&order=work_date.asc',
-    );
+    /* ---- 1. Timesheets: Zoho actual_hours (needs service key) ---- */
+    let actual: any[] = [];
+    let timesheetError: string | null = null;
+    try {
+      actual = await fetchAll(
+        DELIVERY_URL,
+        DELIVERY_SERVICE || DELIVERY_ANON,
+        'actual_hours?select=email,employee_name,project,work_date,hours,billing&order=work_date.asc',
+      );
+    } catch (e: any) {
+      timesheetError = DELIVERY_SERVICE
+        ? (e?.message ?? 'actual_hours fetch failed')
+        : 'DELIVERY_SUPABASE_SERVICE_KEY not set — Zoho timesheet hours excluded '
+          + '(the anon key has no grants on actual_hours)';
+    }
 
     /* ---- 2. Timesheets: internal time_entries (needs service key) ---- */
     let internal: any[] = [];
@@ -123,16 +141,30 @@ export async function GET() {
       internalError = 'DELIVERY_SUPABASE_SERVICE_KEY not set — internal time entries excluded';
     }
 
-    /* ---- 3. HR portal employee master ---- */
+    /* ---- 3. HR portal employee master ------------------------------
+       Read as the signed-in user, not as `anon`. Migration
+       20260829141323 scoped the anon grant on public.employees to a
+       dozen non-sensitive columns, and region/country/type/status/emp_id
+       are not among them — as `anon` this select returns 42501 and the
+       roster silently came back empty, unmatching every timesheet row. */
     let employees: any[] = [];
+    let employeeError: string | null = null;
     try {
+      const cookieStore = await cookies();
+      const hr = createServerClient(HR_URL, HR_ANON, {
+        cookies: { getAll: () => cookieStore.getAll() },
+      });
+      const { data: { session } } = await hr.auth.getSession();
+
       employees = await fetchAll(
         HR_URL,
         HR_ANON,
         'employees?select=name,ms_email,role,dept,region,country,location,manager,type,status,active,emp_id',
+        session?.access_token ?? HR_ANON,
       );
-    } catch {
+    } catch (e: any) {
       employees = [];
+      employeeError = e?.message ?? 'employees fetch failed';
     }
 
     /* ---- 4. Build the person dimension ------------------------------
@@ -358,6 +390,8 @@ export async function GET() {
           },
           dateRange: { min: dates[0] ?? null, max: dates[dates.length - 1] ?? null },
           internalError,
+          timesheetError,
+          employeeError,
         },
       },
       { headers: { 'Cache-Control': 'private, max-age=120' } },
