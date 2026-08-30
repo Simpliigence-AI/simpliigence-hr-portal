@@ -123,6 +123,21 @@ function DossierInner() {
       .then(({ data }) => { setEmployees(data ?? []); setLoading(false); });
   }, []);
 
+  // Deep link: /dossier?emp=<id> opens that employee's profile straight away.
+  // Runs once the roster has loaded; a bad id is simply ignored.
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (deepLinked.current || !employees.length) return;
+    const id = searchParams.get('emp');
+    if (!id) return;
+    const match = employees.find(e => e.id === id);
+    if (match) {
+      setSelected(match);
+      setModalTab('Profile');
+    }
+    deepLinked.current = true;
+  }, [employees, searchParams]);
+
   // Load docs / A&B / certs / targets when opening tabs
   useEffect(() => {
     if (!selected) return;
@@ -489,6 +504,12 @@ function DossierInner() {
     canada:      employees.filter(e => e.region === 'Canada').length,
   };
 
+  // A selected pill shows "shown / total" when the other filters are narrowing
+  // the result set, so it is obvious the number on the pill is not the whole
+  // population. Unselected pills always keep their fixed totals.
+  const narrowedForStatus = Boolean(search) || deptF !== 'All' || regionF !== 'All';
+  const narrowedForRegion = Boolean(search) || deptF !== 'All' || statusF !== 'All';
+
   const STATUS_CHIPS = [
     { label: 'All',          value: 'All',          color: 'bg-gray-800 text-white',           inactive: 'bg-white text-gray-600 border-gray-200', count: counts.all },
     { label: 'Active FTEs',  value: 'Active',        color: 'bg-green-600 text-white',          inactive: 'bg-white text-green-700 border-green-200', count: counts.activeFTE },
@@ -560,8 +581,9 @@ function DossierInner() {
                 statusF === chip.value ? chip.color + ' border-transparent shadow-sm' : chip.inactive)}>
               {chip.label}
               <span className={cn('text-xs px-1.5 py-0.5 rounded-full font-bold',
-                statusF === chip.value ? 'bg-white/25' : 'bg-gray-100 text-gray-500')}>
-                {chip.count}
+                statusF === chip.value ? 'bg-white/25' : 'bg-gray-100 text-gray-500')}
+                title={statusF === chip.value && narrowedForStatus ? `${filtered.length} shown of ${chip.count} total` : undefined}>
+                {statusF === chip.value && narrowedForStatus ? `${filtered.length} / ${chip.count}` : chip.count}
               </span>
             </button>
           ))}
@@ -577,8 +599,9 @@ function DossierInner() {
               <span>{chip.flag}</span>
               {chip.label}
               <span className={cn('text-xs px-1.5 py-0.5 rounded-full font-bold',
-                regionF === chip.value ? 'bg-white/25' : 'bg-gray-100 text-gray-500')}>
-                {chip.count}
+                regionF === chip.value ? 'bg-white/25' : 'bg-gray-100 text-gray-500')}
+                title={regionF === chip.value && narrowedForRegion ? `${filtered.length} shown of ${chip.count} total` : undefined}>
+                {regionF === chip.value && narrowedForRegion ? `${filtered.length} / ${chip.count}` : chip.count}
               </span>
             </button>
           ))}
