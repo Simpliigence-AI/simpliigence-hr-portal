@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // Paths managers are allowed to visit — everything else redirects to /performance
-const MANAGER_ALLOWED = ['/performance']
+const MANAGER_ALLOWED = ['/performance', '/appraisal']
 
 // Roles restricted to the Performance page only (managers + Performance-access reviewers)
 const PERFORMANCE_ONLY_ROLES = ['manager', 'performance_reviewer']
@@ -35,6 +35,13 @@ export async function middleware(request: NextRequest) {
 
   const { data: { session } } = await supabase.auth.getSession()
   const { pathname } = request.nextUrl
+
+  // Tokenised appraisal forms (/appraisal/<token>) are reached by employees and
+  // peer reviewers who have no portal account — the token is the credential.
+  // The bare /appraisal console stays behind auth.
+  if (/^\/appraisal\/[^/]+$/.test(pathname)) {
+    return response
+  }
 
   // Redirect unauthenticated users to login
   if (!session && pathname !== '/login') {
@@ -71,6 +78,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/zoho-test|api/employees|api/briefing).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/zoho-test|api/employees|api/briefing|api/appraisal/form|api/appraisal/recompute).*)',
   ],
 }

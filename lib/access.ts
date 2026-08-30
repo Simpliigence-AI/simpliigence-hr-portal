@@ -34,6 +34,7 @@ export const TABS: Tab[] = [
 
   { key: 'cockpit',        href: '/cockpit',          label: 'Cockpit',             icon: '🎯', section: 'Performance' },
   { key: 'performance',    href: '/performance',      label: 'Performance',         icon: '📊', section: 'Performance' },
+  { key: 'appraisal',      href: '/appraisal',        label: 'Appraisal',           icon: '🎖️', section: 'Performance' },
   { key: 'certifications', href: '/certifications',   label: 'Certifications',      icon: '🏅', section: 'Performance' },
   { key: 'above-beyond',   href: '/above-beyond',     label: 'Above & Beyond',      icon: '⭐', section: 'Performance' },
 
