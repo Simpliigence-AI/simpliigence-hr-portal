@@ -140,9 +140,14 @@ export function useAccess(): Access {
   }, []);
 
   const effective: Role = role ?? 'viewer';
+  const isAdmin = (email ?? '').toLowerCase() === ADMIN_EMAIL;
   const can = (tabKey: string) => {
     const tab = TABS.find((t) => t.key === tabKey);
     if (!tab) return false;
+    // User Management is hard-gated to ADMIN_EMAIL by its page and API routes
+    // (app/admin/users, /api/admin/users) — everyone else gets bounced to the
+    // dashboard. Only show the link to the account that can actually open it.
+    if (tab.key === 'admin-users' && !isAdmin) return false;
     if (matrix && matrix.has(tabKey)) return matrix.get(tabKey)!;
     return FALLBACK_ALLOW[effective](tab);
   };
@@ -151,7 +156,7 @@ export function useAccess(): Access {
     loading,
     email,
     role,
-    isAdmin: (email ?? '').toLowerCase() === ADMIN_EMAIL,
+    isAdmin,
     tabs: TABS.filter((t) => can(t.key)),
     can,
     reviewScope: reviewScopeFor(role),
