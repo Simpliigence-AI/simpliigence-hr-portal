@@ -80,7 +80,7 @@ function DossierInner() {
   const searchParams = useSearchParams();
   const [employees,  setEmployees]  = useState<Employee[]>([]);
   const [loading,    setLoading]    = useState(true);
-  const [search,     setSearch]     = useState('');
+  const [search,     setSearch]     = useState(() => searchParams.get('search') ?? '');
   const [deptF,      setDeptF]      = useState('All');
   const [regionF,    setRegionF]    = useState(() => searchParams.get('region') ?? 'All');
   const [statusF,    setStatusF]    = useState(() => searchParams.get('status') ?? 'All');

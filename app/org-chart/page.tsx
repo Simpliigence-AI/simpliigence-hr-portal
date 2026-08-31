@@ -21,6 +21,7 @@ interface Employee {
   status?: string | null;
   photo_url?: string | null;
   joined?: string | null;
+  _noId?: boolean;   // the Dossier row has a blank employee id
 }
 
 interface Node {
@@ -90,7 +91,9 @@ function buildForest(employees: Employee[]): Forest {
 
     let match = byNorm.get(key)?.[0] ?? null;
     if (!match) {
-      const cands = (byFirst.get(key) ?? []).filter(c => c.id !== e.id);
+      // "Anupama Bavihalli" in the manager field vs "Anupama B" on the roster:
+      // fall back to the manager's first name, but only when it is unambiguous.
+      const cands = (byFirst.get(key.split(' ')[0]) ?? []).filter(c => c.id !== e.id);
       if (cands.length === 1) match = cands[0];
     }
     if (match && match.id === e.id) match = null;
@@ -117,7 +120,7 @@ function buildForest(employees: Employee[]): Forest {
   const childrenOf = new Map<string, Employee[]>();
   for (const e of employees) {
     const p = parentOf.get(e.id) ?? null;
-    if (!p) continue;
+    if (p == null || p === '') continue;
     (childrenOf.get(p) ?? childrenOf.set(p, []).get(p)!).push(e);
   }
 
@@ -145,7 +148,7 @@ function buildForest(employees: Employee[]): Forest {
     return node;
   }
 
-  const rootEmps = employees.filter(e => !parentOf.get(e.id));
+  const rootEmps = employees.filter(e => (parentOf.get(e.id) ?? null) == null);
   const ceo = rootEmps.find(e => norm(e.name).includes('raghu seetharam')) ?? rootEmps[0] ?? null;
 
   const root = ceo ? build(ceo, null, 0) : null;
@@ -159,9 +162,10 @@ function buildForest(employees: Employee[]): Forest {
 
 /* ── Small shared pieces ───────────────────────────────────────────── */
 
-function CountChips({ node, size = 'sm' }: { node: Node; size?: 'sm' | 'md' }) {
+function CountChips({ node, size = 'sm', hideEmpty = false }: { node: Node; size?: 'sm' | 'md'; hideEmpty?: boolean }) {
   const pad = size === 'md' ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[11px]';
   if (node.direct === 0) {
+    if (hideEmpty) return null;
     return (
       <span className={cn('rounded-md bg-gray-50 text-gray-400 font-medium whitespace-nowrap', pad)}>
         no reports
@@ -280,7 +284,7 @@ function TreeRow({ node, isLast, expanded, toggle, onSelect, onFocus, selectedId
           <DeptChip dept={node.emp.dept} />
         </span>
 
-        <CountChips node={node} />
+        <CountChips node={node} hideEmpty />
 
         {hasKids && (
           <button
@@ -509,7 +513,7 @@ function DetailPanel({ node, forest, onClose, onJump, onFocus }: {
               ['Region', e.region ? `${REGION_FLAG[e.region] ?? ''} ${e.region}` : '—'],
               ['Location', e.location ?? '—'],
               ['Joined', e.joined ? `${formatDate(e.joined)}${tenure(e.joined) ? ` · ${tenure(e.joined)}` : ''}` : '—'],
-              ['Employee ID', e.id],
+              ['Employee ID', e._noId ? '— missing in Dossier' : e.id],
             ] as [string, string][]).map(([k, v]) => (
               <div key={k} className="flex justify-between gap-3 py-2">
                 <dt className="text-gray-400">{k}</dt>
@@ -580,12 +584,21 @@ function DetailPanel({ node, forest, onClose, onJump, onFocus }: {
                 Show only this organisation
               </button>
             )}
-            <Link
-              href={`/dossier?emp=${encodeURIComponent(e.id)}`}
-              className="w-full py-2 rounded-lg bg-blue-600 text-white text-sm font-medium text-center hover:bg-blue-700"
-            >
-              Open full profile in Dossier →
-            </Link>
+            {e._noId ? (
+              <Link
+                href={`/dossier?search=${encodeURIComponent(e.name)}`}
+                className="w-full py-2 rounded-lg bg-blue-600 text-white text-sm font-medium text-center hover:bg-blue-700"
+              >
+                Find in Dossier →
+              </Link>
+            ) : (
+              <Link
+                href={`/dossier?emp=${encodeURIComponent(e.id)}`}
+                className="w-full py-2 rounded-lg bg-blue-600 text-white text-sm font-medium text-center hover:bg-blue-700"
+              >
+                Open full profile in Dossier →
+              </Link>
+            )}
           </div>
         </div>
       </aside>
@@ -633,10 +646,17 @@ export default function OrgChartPage() {
     try { window.localStorage.setItem('orgchart:view', v); } catch { /* ignore */ }
   }, []);
 
-  const people = useMemo(
-    () => (showContractors ? all : all.filter(e => !isContractor(e))),
-    [all, showContractors],
-  );
+  // A couple of Dossier rows have a blank employee id (Ankit Kedia, today).
+  // A falsy id silently detached everyone reporting to them, so give those rows
+  // a synthetic key and flag it so the Dossier link is hidden rather than broken.
+  const people = useMemo(() => {
+    const src = showContractors ? all : all.filter(e => !isContractor(e));
+    return src.map((e, i) =>
+      e.id && e.id.trim()
+        ? e
+        : { ...e, id: `no-id-${i}-${norm(e.name).replace(/\s+/g, '-')}`, _noId: true },
+    );
+  }, [all, showContractors]);
 
   const forest = useMemo(() => buildForest(people), [people]);
 
@@ -875,7 +895,7 @@ export default function OrgChartPage() {
       ) : !displayRoot ? (
         <div className="text-gray-400 text-sm">No data found.</div>
       ) : view === 'tree' ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-3 overflow-x-auto">
+        <div className="bg-white rounded-xl border border-gray-200 p-3 overflow-x-auto max-w-5xl">
           <ul className="min-w-max">
             {/* root rendered without a rail */}
             <li>
