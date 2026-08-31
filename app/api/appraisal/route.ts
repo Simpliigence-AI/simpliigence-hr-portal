@@ -2,7 +2,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { svc, newToken, baseUrl, sendMail, logEvent, esc } from '@/lib/appraisal-server'
+import { svc, newToken, baseUrl, sendMail, logEvent, esc, mailChannel, mailFrom } from '@/lib/appraisal-server'
 import { finalScore, bandFor, performanceTier, nineBox, raterScore, scoreCore } from '@/lib/appraisal'
 
 export const dynamic = 'force-dynamic'
@@ -123,7 +123,7 @@ export async function GET(req: Request) {
     appraisals,
     participants,
     employees: employees ?? [],
-    smtp: Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD),
+    mail: { channel: mailChannel(), from: mailFrom() },
   })
 }
 
@@ -365,6 +365,18 @@ ${mgrAns.goals_next ? `<div style="margin:16px 0;"><div style="font-size:11px;fo
     await db.from('appraisals').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', body.appraisal_id)
     await logEvent(body.appraisal_id, s.email, 'cancelled', body.reason ?? null)
     return NextResponse.json({ ok: true })
+  }
+
+  if (action === 'test_mail') {
+    if (!s.isHr) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const to = String(body.to || s.email)
+    const r = await sendMail({
+      to,
+      subject: 'Appraisal module — test message',
+      heading: 'Mail is working',
+      body: `<p>This is a test from the HR portal's appraisal module, sent through <strong>${esc(mailChannel())}</strong> from <strong>${esc(mailFrom())}</strong>.</p><p>If you can read this, appraisal invites will reach employees, their nominated peers and their managers.</p>`,
+    })
+    return NextResponse.json({ ok: r.ok, error: r.error, channel: mailChannel(), from: mailFrom(), to })
   }
 
   if (action === 'events') {

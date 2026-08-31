@@ -51,20 +51,89 @@ export function shell({ heading, body, cta, footer }: Omit<MailArgs, 'to' | 'sub
 </table></td></tr></table></body></html>`
 }
 
+/** Which channel this deployment can actually send appraisal mail through. */
+export function mailChannel(): 'graph' | 'smtp' | 'none' {
+  if (process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET) return 'graph'
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) return 'smtp'
+  return 'none'
+}
+
+/** The mailbox appraisal mail is sent from. Must be a real M365 mailbox. */
+export function mailFrom() {
+  return process.env.APPRAISAL_FROM || 'raghu.seetharam@simpliigence.com'
+}
+
+async function graphToken(): Promise<string> {
+  const res = await fetch(
+    `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: process.env.AZURE_CLIENT_ID!,
+        client_secret: process.env.AZURE_CLIENT_SECRET!,
+        grant_type: 'client_credentials',
+        scope: 'https://graph.microsoft.com/.default',
+      }),
+    }
+  )
+  const j = await res.json()
+  if (!res.ok || !j.access_token) throw new Error(j.error_description || j.error || 'token request failed')
+  return j.access_token as string
+}
+
+/**
+ * Send through Microsoft 365 with the app registration already used by the
+ * Teams sync. Needs the Mail.Send *application* permission with admin consent;
+ * without it Graph answers 403 and we say so rather than failing silently.
+ */
+async function sendViaGraph(args: MailArgs): Promise<{ ok: boolean; error?: string }> {
+  const token = await graphToken()
+  const sender = mailFrom()
+  const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        subject: args.subject,
+        body: { contentType: 'HTML', content: shell(args) },
+        toRecipients: [{ emailAddress: { address: args.to } }],
+      },
+      saveToSentItems: true,
+    }),
+  })
+  if (res.status === 202) return { ok: true }
+  const text = await res.text()
+  let detail = text.slice(0, 300)
+  try { detail = JSON.parse(text)?.error?.message ?? detail } catch {}
+  if (res.status === 403) {
+    return { ok: false, error: `Graph refused (403). The app registration needs the Mail.Send application permission with admin consent. ${detail}` }
+  }
+  if (res.status === 404) {
+    return { ok: false, error: `No mailbox found for ${sender}. Set APPRAISAL_FROM to a real M365 mailbox. ${detail}` }
+  }
+  return { ok: false, error: `Graph ${res.status}: ${detail}` }
+}
+
+async function sendViaSmtp(args: MailArgs): Promise<{ ok: boolean; error?: string }> {
+  const user = process.env.GMAIL_USER!
+  const pass = process.env.GMAIL_APP_PASSWORD!
+  const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user, pass } })
+  await transporter.sendMail({
+    from: `"${process.env.GMAIL_FROM_NAME || 'Simpliigence People Team'}" <${user}>`,
+    to: args.to,
+    subject: args.subject,
+    html: shell(args),
+  })
+  return { ok: true }
+}
+
 export async function sendMail(args: MailArgs): Promise<{ ok: boolean; error?: string }> {
-  const user = process.env.GMAIL_USER || ''
-  const pass = process.env.GMAIL_APP_PASSWORD || ''
-  if (!user || !pass) return { ok: false, error: 'SMTP not configured' }
   if (!args.to) return { ok: false, error: 'No email address on file' }
+  const channel = mailChannel()
+  if (channel === 'none') return { ok: false, error: 'No mail channel configured' }
   try {
-    const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user, pass } })
-    await transporter.sendMail({
-      from: `"${process.env.GMAIL_FROM_NAME || 'Simpliigence People Team'}" <${user}>`,
-      to: args.to,
-      subject: args.subject,
-      html: shell(args),
-    })
-    return { ok: true }
+    return channel === 'graph' ? await sendViaGraph(args) : await sendViaSmtp(args)
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'send failed' }
   }

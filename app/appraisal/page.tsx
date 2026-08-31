@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
-import AppShell from '@/components/AppShell'
 import {
   BANDS, bandFor, CORE_RATINGS, COMPETENCIES, POTENTIAL, STAGES,
   performanceTier, parseProjects, SELF_NARRATIVES, PEER_NARRATIVES, MANAGER_NARRATIVES,
@@ -43,7 +42,7 @@ export default function AppraisalPage() {
   const [appraisals, setAppraisals] = useState<Appraisal[]>([])
   const [participants, setParticipants] = useState<Participant[]>([])
   const [employees, setEmployees] = useState<Emp[]>([])
-  const [smtp, setSmtp] = useState(true)
+  const [mail, setMail] = useState<{ channel: string; from: string }>({ channel: 'graph', from: '' })
   const [tab, setTab] = useState<'board' | 'trigger' | 'calibration'>('board')
   const [open, setOpen] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -58,7 +57,7 @@ export default function AppraisalPage() {
     if (!r.ok) { setToast(j.error ?? 'Failed to load'); setLoading(false); return }
     setMe(j.me); setCycles(j.cycles); setCycleId(j.activeCycle)
     setAppraisals(j.appraisals); setParticipants(j.participants)
-    setEmployees(j.employees); setSmtp(j.smtp)
+    setEmployees(j.employees); setMail(j.mail ?? { channel: 'none', from: '' })
     setLoading(false)
   }
   useEffect(() => { load() }, [])
@@ -99,10 +98,10 @@ export default function AppraisalPage() {
     !q || `${a.employee_name} ${a.employee_role} ${a.employee_dept} ${a.manager_name}`.toLowerCase().includes(q.toLowerCase())
   )
 
-  if (loading) return <AppShell><div className="p-8 text-sm text-gray-400">Loading appraisals…</div></AppShell>
+  if (loading) return <div className="p-8 text-sm text-gray-400">Loading appraisals…</div>
 
   return (
-    <AppShell>
+    <>
       <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
         {/* header */}
         <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
@@ -126,11 +125,20 @@ export default function AppraisalPage() {
           </div>
         </div>
 
-        {!smtp && (
-          <div className="mb-4 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-            Email is not configured on this deployment (GMAIL_USER / GMAIL_APP_PASSWORD). Appraisals will still be created, but invite links must be copied and sent manually — use the copy-link button on each participant row.
-          </div>
-        )}
+        <div className={`mb-4 text-xs rounded-xl px-4 py-3 flex items-center justify-between gap-4 flex-wrap ${mail.channel === 'none' ? 'text-amber-800 bg-amber-50 border border-amber-200' : 'text-gray-600 bg-gray-50 border border-gray-200'}`}>
+          <span>
+            {mail.channel === 'graph' && <>Invites are sent through Microsoft 365 from <strong>{mail.from}</strong>.</>}
+            {mail.channel === 'smtp' && <>Invites are sent over Gmail SMTP.</>}
+            {mail.channel === 'none' && <>No mail channel is configured, so invite links must be copied and sent by hand — use the copy-link button on each participant row. Set <strong>AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET</strong> (the Teams-sync app, with Mail.Send consent) or <strong>GMAIL_USER / GMAIL_APP_PASSWORD</strong>.</>}
+          </span>
+          {me?.isHr && mail.channel !== 'none' && (
+            <button
+              onClick={async () => { const j = await act({ action: 'test_mail' }, 'testmail'); setToast(j?.ok ? `Test email sent to ${j.to}` : `Test failed: ${j?.error ?? 'unknown'}`) }}
+              className="px-3 py-1.5 font-semibold rounded-lg border border-gray-300 bg-white hover:bg-gray-100 shrink-0">
+              Send test email
+            </button>
+          )}
+        </div>
 
         {!cycle && (
           <div className={`${CARD} p-12 text-center`}>
@@ -239,7 +247,7 @@ export default function AppraisalPage() {
           {toast}<button onClick={() => setToast(null)} className="text-white/50 hover:text-white">✕</button>
         </div>
       )}
-    </AppShell>
+    </>
   )
 }
 
