@@ -47,9 +47,40 @@ const [loading, setLoading] = useState(true)
 const [groupBy, setGroupBy] = useState<GroupBy>('type')
 const [search, setSearch] = useState('')
 const [showAdd, setShowAdd] = useState(false)
+const [editing, setEditing] = useState<CertRow | null>(null)
 const [saving, setSaving] = useState(false)
 const [addErr, setAddErr] = useState('')
 const [form, setForm] = useState({ employee_id: '', cert_name: '', issuer: 'Salesforce', status: 'Active', issued_date: '', expiry_date: '' })
+
+const EMPTY_FORM = { employee_id: '', cert_name: '', issuer: 'Salesforce', status: 'Active', issued_date: '', expiry_date: '' }
+
+function startAdd() {
+	setEditing(null)
+	setForm(EMPTY_FORM)
+	setAddErr('')
+	setShowAdd(true)
+}
+
+function startEdit(c: CertRow) {
+	setEditing(c)
+	setForm({
+		employee_id: c.employee_id,
+		cert_name: c.cert_name,
+		issuer: c.issuer ?? '',
+		status: c.status ?? 'Active',
+		issued_date: c.issued_date ?? '',
+		expiry_date: c.expiry_date ?? '',
+	})
+	setAddErr('')
+	setShowAdd(true)
+}
+
+function closeForm() {
+	setShowAdd(false)
+	setEditing(null)
+	setForm(EMPTY_FORM)
+	setAddErr('')
+}
 
 function loadCerts() {
 return supabase
@@ -92,23 +123,25 @@ map.get(key)!.push(c)
 return [...map.entries()].sort((a, b) => b[1].length - a[1].length)
 }, [filtered, groupBy])
 
-async function addCert() {
+async function saveCert() {
 setAddErr('')
 if (!form.employee_id) { setAddErr('Select an employee'); return }
 if (!form.cert_name.trim()) { setAddErr('Enter certification name'); return }
 setSaving(true)
-const { error } = await supabase.from('certifications').insert({
+const payload = {
 employee_id: form.employee_id,
 cert_name: form.cert_name.trim(),
 issuer: form.issuer.trim() || null,
 status: form.status || 'Active',
 issued_date: form.issued_date || null,
 expiry_date: form.expiry_date || null,
-})
+}
+const { error } = editing
+? await supabase.from('certifications').update(payload).eq('id', editing.id)
+: await supabase.from('certifications').insert(payload)
 setSaving(false)
 if (error) { setAddErr(error.message); return }
-setShowAdd(false)
-setForm({ employee_id: '', cert_name: '', issuer: 'Salesforce', status: 'Active', issued_date: '', expiry_date: '' })
+closeForm()
 setLoading(true)
 loadCerts()
 }
@@ -128,7 +161,7 @@ return (
 <h1 className="text-xl font-bold text-gray-900">Certifications</h1>
 <p className="text-sm text-gray-400 mt-0.5">Track and explore team certifications</p>
 </div>
-<button onClick={() => setShowAdd(true)}
+<button onClick={startAdd}
 className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 font-semibold">
 + Add Certification
 </button>
@@ -181,9 +214,15 @@ className="flex-1 max-w-sm px-3 py-1.5 text-sm border rounded-lg focus:ring-2 fo
 </div>
 <div className="flex flex-col gap-2 overflow-y-auto flex-1 pb-2">
 {items.map(c => (
-<div key={c.id} className="bg-white rounded-xl border border-gray-200 px-3 py-2.5 hover:shadow-md transition-shadow">
-<div className="text-xs font-semibold text-gray-900 leading-snug mb-1">
+<div key={c.id} className="group bg-white rounded-xl border border-gray-200 px-3 py-2.5 hover:shadow-md transition-shadow">
+<div className="flex items-start justify-between gap-1 mb-1">
+<div className="text-xs font-semibold text-gray-900 leading-snug">
 {groupBy === 'employee' ? c.cert_name : c.emp_name}
+</div>
+<button onClick={() => startEdit(c)} title="Edit certification"
+className="text-xs text-blue-500 hover:underline opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+Edit
+</button>
 </div>
 <div className="flex items-center justify-between gap-1">
 <span className="text-xs text-gray-400 truncate">
@@ -205,11 +244,11 @@ className="flex-1 max-w-sm px-3 py-1.5 text-sm border rounded-lg focus:ring-2 fo
 
 {/* Add Certification Modal */}
 {showAdd && (
-<div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
+<div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" onClick={e => e.target === e.currentTarget && closeForm()}>
 <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
 <div className="flex items-center justify-between mb-5">
-<h2 className="text-lg font-bold text-gray-900">Add Certification</h2>
-<button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-600 text-xl">â</button>
+<h2 className="text-lg font-bold text-gray-900">{editing ? 'Edit Certification' : 'Add Certification'}</h2>
+<button onClick={closeForm} className="text-gray-400 hover:text-gray-600 text-xl">â</button>
 </div>
 
 <div className="space-y-4">
@@ -259,11 +298,11 @@ className="w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-bl
 {addErr && <div className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{addErr}</div>}
 
 <div className="flex gap-3 mt-5">
-<button onClick={() => setShowAdd(false)}
+<button onClick={closeForm}
 className="flex-1 px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
-<button onClick={addCert} disabled={saving}
+<button onClick={saveCert} disabled={saving}
 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
-{saving ? 'Savingâ¦' : 'Add Certification'}
+{saving ? 'Savingâ¦' : editing ? 'Save changes' : 'Add Certification'}
 </button>
 </div>
 </div>
